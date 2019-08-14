@@ -12,5 +12,10 @@ setup(
         "pysundials_cffi/build_cvode.py:ffibuilder",
         "pysundials_cffi/build_cvodes.py:ffibuilder",
     ],
-    install_requires=["cffi>=1.0.0"],
+    install_requires=[
+        "cffi>=1.0.0",
+        "sympy",
+        "numpy",
+        "numba",
+    ],
 )
