@@ -1,13 +1,15 @@
 import logging
 import types
+from types import MethodType
 import pydoc
+from typing import Callable
 
 
 logger = logging.getLogger('pysundials_cffi.builder')
 
 
-def bind(obj, func):
-    method = types.MethodType(func, obj)
+def bind(obj: Builder, func: Callable):
+    method = MethodType(func, obj)
     setattr(obj, func.__name__, method)
 
 
@@ -78,3 +80,7 @@ class Builder:
 
         self.__doc__ = self._make_docstring()
         return self
+
+    # We tell mypy that there are dynamic methods
+    def __getattr__(self, name: str) -> Callable:
+        raise AttributeError()

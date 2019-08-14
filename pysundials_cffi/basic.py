@@ -5,6 +5,7 @@ from scipy import sparse
 import numba
 import numba.cffi_support
 import logging
+from typing import Optional, Tuple, Union, NewType
 
 from pysundials_cffi import _cvodes
 
@@ -27,6 +28,9 @@ data_dtype = numba.cffi_support.map_type(ffi.typeof('realtype'))
 index_dtype = numba.cffi_support.map_type(ffi.typeof('sunindextype'))
 
 
+CPointer = NewType('CPointer', int)
+
+
 class Borrows:
     def __init__(self):
         self._borrowed = []
@@ -38,7 +42,7 @@ class Borrows:
         self._borrowed = []
 
 
-def notnull(ptr, msg=None):
+def notnull(ptr: CPointer, msg=None) -> CPointer:
     if ptr == ffi.NULL:
         if msg is None:
             raise ValueError('CPointer is NULL.')
@@ -47,7 +51,7 @@ def notnull(ptr, msg=None):
     return ptr
 
 
-def empty_vector(length, kind='serial'):
+def empty_vector(length: int, kind: str='serial') -> Vector:
     assert kind == 'serial'
     if kind != 'serial':
         raise NotImplementedError()
@@ -83,7 +87,11 @@ MATRIX_TYPES = {
 MATRIX_TYPES_REV = {v: k for k, v in MATRIX_TYPES.items()}
 
 
-def empty_matrix(shape, kind='dense', format=None, sparsity=None):
+def empty_matrix(
+        shape: Tuple[int, int],
+        kind: str='dense',
+        format: Optional[str]=None, sparsity=None
+    ) -> Union[DenseMatrix, SparseMatrix]:
     rows, columns = shape
     if kind == 'dense':
         ptr = lib.SUNDenseMatrix(rows, columns)
@@ -112,6 +120,8 @@ def empty_matrix(shape, kind='dense', format=None, sparsity=None):
         matrix.indptr[...] = sparsity.indptr
         matrix.indices[...] = sparsity.indices
         return matrix
+    else:
+        raise ValueError('Unknown matrix type %s' % kind)
 
 
 class SparseMatrix:

@@ -4,3 +4,4 @@ _sundials*
 include/sundials_include
 *egg-info
 .ipy*
+.mypy_cache
