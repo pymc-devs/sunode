@@ -1,18 +1,11 @@
-#import sys
-import types
-import pydoc
 import logging
 
-#import numpy as np
-#from scipy import sparse
-#import numba
-#import numba.cffi_support
-
 from pysundials_cffi import _cvodes
-from pysundials_cffi.basic import data_dtype, index_dtype, notnull
+from pysundials_cffi.basic import (
+    data_dtype, index_dtype, notnull, Borrows)
 from pysundials_cffi import basic
 
-__all__ = ['make_linear_solver']
+__all__ = ['linear_solver']
 
 logger = logging.getLogger('pysundials_cffi.linear_solver')
 
@@ -23,83 +16,6 @@ ffi = _cvodes.ffi
 LINEAR_SOLVERS = {
     'direct': lib.SUNLINEARSOLVER_DIRECT,
 }
-
-
-def make_linear_solver(kind='dense'):
-    pass
-
-def bind(obj, func):
-    method = types.MethodType(func, obj)
-    setattr(obj, func.__name__, method)
-
-
-class Builder:
-    def __init__(self, finalize, required=None, optional=None):
-        if required is None:
-            required = []
-        if optional is None:
-            optional = []
-        self._required = required
-        self._optional = optional
-        self._finalize = finalize
-
-        for func in self._required:
-            bind(self, func)
-        for func in self._optional:
-            bind(self, func)
-        self.__doc__ = self._make_docstring()
-
-    def finalize(self):
-        if self._required:
-            raise ValueError(
-                'Not all required methods were called. Missing %s'
-                % [f.__name__ for f in self._required])
-        return self._finalize(self)
-
-    def options(self):
-        print(self.__doc__)
-
-    def _make_docstring(self):
-        sections = []
-        if self._required:
-            sec = '\n'.join(pydoc.plaintext.document(func) for func in self._required)
-            sec = pydoc.plaintext.section('Required methods', sec)
-            sections.append(sec)
-        if self._optional:
-            sec = '\n'.join(pydoc.plaintext.document(func) for func in self._optional)
-            sec = pydoc.plaintext.section('Optional methods', sec)
-            sections.append(sec)
-        return '\n'.join(sections)
-
-    def _modify(self, remove=None, required=None, optional=None):
-        if remove is not None:
-            for name in remove:
-                required_names = [f.__name__ for f in self._required]
-                optional_names = [f.__name__ for f in self._optional]
-                if name in required_names:
-                    self._required.pop(required_names.index(name))
-                elif name in optional_names:
-                    self._optional.pop(optional_names.index(name))
-                else:
-                    raise ValueError('Unknown function %s' % name)
-                delattr(self, name)
-
-        if required is not None:
-            for func in required:
-                bind(self, func)
-            req = required.copy()
-            req.extend(self._required)
-            self._required = req
-
-        if optional is not None:
-            for func in optional:
-                bind(self, func)
-            opt = optional.copy()
-            opt.extend(self._optional)
-            self._optional = opt
-
-        self.__doc__ = self._make_docstring()
-        return self
 
 
 def make_direct_solver_function(builder, y, kind):
@@ -146,7 +62,8 @@ def make_sparse_solver_function(builder, y, kind):
             return solver
 
         return make_solver
-    else:
+
+    if kind == 'superlu':
         num_threads = 1
         superlu_ordering = 3
 
@@ -158,7 +75,7 @@ def make_sparse_solver_function(builder, y, kind):
 
         def superlu_ordering(builder, ordering):
             """Choose which ordering method SuperLU should use.
-            
+
             Options are:
             - 'natural' for a natural ordering.
             - 'AtA' for a minimal degree ordering on :math:`A^TA`
@@ -176,11 +93,11 @@ def make_sparse_solver_function(builder, y, kind):
             return builder._modify(['superlu_ordering'])
 
         builder._modify(optional=[superlu_threads, superlu_ordering])
-        
+
         def make_solver():
             ptr = lib.SUNLinSol_SuperLUMT(y, jac, num_threads)
             notnull(ptr, 'Could not create linear solver superlu.')
-            ret = SUNLinSol_SuperLUMTSetOrdering(ptr, ordering)
+            ret = lib.SUNLinSol_SuperLUMTSetOrdering(ptr, superlu_ordering)
             if ret != lib.SUNLS_SUCCESS:
                 raise ValueError('Could not set ordering.')
             solver = LinearSolver(ptr)
@@ -189,11 +106,12 @@ def make_sparse_solver_function(builder, y, kind):
             return solver
 
         return make_solver
+    assert False
 
 
 def linear_solver(builder, kind):
     """Choose the linear solver.
-    
+
     `kind` must be one of 'dense' (the default) and 'lapack'.
     """
     # provides builder._make_linear_solver
@@ -212,17 +130,6 @@ def linear_solver(builder, kind):
     return builder._modify(['linear_solver'])
 
 
-class Borrows:
-    def __init__(self):
-        self._borrowed = []
-
-    def borrow(self, arg):
-        self._borrowed.append(arg)
-
-    def release_borrowed(self):
-        self._borrowed = []
-
-
 class LinearSolver(Borrows):
     def __init__(self, c_ptr):
         super().__init__()
@@ -233,6 +140,9 @@ class LinearSolver(Borrows):
         ret = lib.SUNLinSolInitialize(self.c_ptr)
         if ret != 0:
             raise ValueError('Could not initialize linear solver.')
+
+    def reinit(self):
+        raise NotImplementedError()
 
     def __del__(self):
         logger.debug('Freeing LinearSolver')

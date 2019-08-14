@@ -27,6 +27,17 @@ data_dtype = numba.cffi_support.map_type(ffi.typeof('realtype'))
 index_dtype = numba.cffi_support.map_type(ffi.typeof('sunindextype'))
 
 
+class Borrows:
+    def __init__(self):
+        self._borrowed = []
+
+    def borrow(self, arg):
+        self._borrowed.append(arg)
+
+    def release_borrowed(self):
+        self._borrowed = []
+
+
 def notnull(ptr, msg=None):
     if ptr == ffi.NULL:
         if msg is None:
@@ -122,13 +133,13 @@ class SparseMatrix:
             return self._name
         else:
             return str(self.c_ptr)
-    
+
     def __del__(self):
         logger.debug('Freeing matrix %s' % self.name)
         lib.SUNMatDestroy(self.c_ptr)
         self.c_ptr = None
         self._data_owner = None
-    
+
     @property
     def format(self):
         c_type = lib.SUNSparseMatrix_SparseType(self.c_ptr)
@@ -168,11 +179,11 @@ class SparseMatrix:
         nbytes = self.index_dtype.itemsize * size
         buffer = ffi.buffer(ptr, nbytes)
         return np.frombuffer(buffer, self.index_dtype)
-        
+
     @property
     def indptr(self):
         size = lib.SUNSparseMatrix_NP(self.c_ptr)
-        size += 1  # 
+        size += 1  #
         ptr = lib.SUNSparseMatrix_IndexPointers(self.c_ptr)
         if ptr == ffi.NULL:
             raise ValueError('Matrix does not contain data.')
@@ -208,7 +219,7 @@ class SparseMatrix:
 class DenseMatrix:
     dtype = np.dtype(data_dtype.name)
     index_dtype = np.dtype(index_dtype.name)
-    
+
     def __init__(self, c_ptr, data_owner, name=None):
         if c_ptr == ffi.NULL:
             raise ValueError('CPointer is NULL.')
@@ -225,13 +236,13 @@ class DenseMatrix:
             return self._name
         else:
             return str(self.c_ptr)
-    
+
     def __del__(self):
         logger.debug('Freeing matrix %s' % self.name)
         lib.SUNMatDestroy(self.c_ptr)
         self.c_ptr = None
         self._data_owner = None
-    
+
     @property
     def shape(self):
         rows = lib.SUNDenseMatrix_Rows(self.c_ptr)
@@ -287,13 +298,13 @@ class Vector:
             return self._name
         else:
             return str(self.c_ptr)
-    
+
     def __del__(self):
         logger.debug('Freeing vector %s' % self.name)
         lib.N_VDestroy_Serial(self.c_ptr)
         self.c_ptr = None
         self._data_owner = None
-    
+
     def c_print(self, file=None):
         if file is None:
             lib.N_VPrint_Serial(self.c_ptr)
@@ -303,7 +314,7 @@ class Vector:
     @property
     def shape(self):
         return (lib.N_VGetLength_Serial(self.c_ptr),)
-    
+
     @property
     def data(self):
         data_ptr = lib.N_VGetArrayPointer_Serial(c_ptr)
