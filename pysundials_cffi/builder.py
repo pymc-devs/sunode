@@ -5,7 +5,7 @@ import pydoc
 from typing import Callable
 
 
-logger = logging.getLogger('pysundials_cffi.builder')
+logger = logging.getLogger("pysundials_cffi.builder")
 
 
 def bind(obj: Builder, func: Callable):
@@ -32,8 +32,9 @@ class Builder:
     def finalize(self):
         if self._required:
             raise ValueError(
-                'Not all required methods were called. Missing %s'
-                % [f.__name__ for f in self._required])
+                "Not all required methods were called. Missing %s"
+                % [f.__name__ for f in self._required]
+            )
         return self._finalize(self)
 
     def options(self):
@@ -42,14 +43,14 @@ class Builder:
     def _make_docstring(self):
         sections = []
         if self._required:
-            sec = '\n'.join(pydoc.plaintext.document(func) for func in self._required)
-            sec = pydoc.plaintext.section('Required methods', sec)
+            sec = "\n".join(pydoc.plaintext.document(func) for func in self._required)
+            sec = pydoc.plaintext.section("Required methods", sec)
             sections.append(sec)
         if self._optional:
-            sec = '\n'.join(pydoc.plaintext.document(func) for func in self._optional)
-            sec = pydoc.plaintext.section('Optional methods', sec)
+            sec = "\n".join(pydoc.plaintext.document(func) for func in self._optional)
+            sec = pydoc.plaintext.section("Optional methods", sec)
             sections.append(sec)
-        return '\n'.join(sections)
+        return "\n".join(sections)
 
     def _modify(self, remove=None, required=None, optional=None):
         if remove is not None:
@@ -61,7 +62,7 @@ class Builder:
                 elif name in optional_names:
                     self._optional.pop(optional_names.index(name))
                 else:
-                    raise ValueError('Unknown function %s' % name)
+                    raise ValueError("Unknown function %s" % name)
                 delattr(self, name)
 
         if required is not None:

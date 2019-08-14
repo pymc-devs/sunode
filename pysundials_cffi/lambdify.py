@@ -8,9 +8,11 @@ import inspect
 
 
 def split_constants(expr, variables, names):
-    if (not isinstance(expr, sympy.Expr)
-            or isinstance(expr, sympy.Symbol)
-            or not expr.free_symbols):
+    if (
+        not isinstance(expr, sympy.Expr)
+        or isinstance(expr, sympy.Symbol)
+        or not expr.free_symbols
+    ):
         return [], expr
 
     consts = []
@@ -32,11 +34,11 @@ def cse_const(expr, args):
     const_exprs = []
     variables = list(args)
 
-    const_names = (sympy.Symbol(f'CONSTANT_DUMMY__{i}_') for i in count())
-    cse_names = (sympy.Symbol(f'CSE_DUMMY__{i}_') for i in count())
-    
+    const_names = (sympy.Symbol(f"CONSTANT_DUMMY__{i}_") for i in count())
+    cse_names = (sympy.Symbol(f"CSE_DUMMY__{i}_") for i in count())
+
     pre, (final,) = sympy.cse(expr, cse_names)
-    
+
     for sym, expr in pre:
         consts, mod_expr = split_constants(expr, variables, const_names)
         const_exprs.extend(consts)
@@ -56,10 +58,11 @@ class LambdifyAST:
         self._global = glob
         self._locale = locale
         self._body = []
-    
+
     def add_imports(self):
-        imports = ast.parse(textwrap.dedent(
-            """
+        imports = ast.parse(
+            textwrap.dedent(
+                """
             from collections import namedtuple
             import numba
             from numpy import *
@@ -70,121 +73,119 @@ class LambdifyAST:
                 max_val = fmax(a, b)
                 return max_val + log1p(exp(min_val - max_val))
             """
-        ))
+            )
+        )
         self._body.extend(imports.body)
-        
+
     def add_const_namedtuple(self, const_vars, vars):
         call = ast.Call(
-            func=ast.Name(id='namedtuple', ctx=ast.Load()),
+            func=ast.Name(id="namedtuple", ctx=ast.Load()),
             args=[
-                ast.Str(s='Constants'),
+                ast.Str(s="Constants"),
                 ast.List(
                     elts=[ast.Str(s=str(name)) for name in vars]
-                         + [ast.Str(s=str(name)) for name in const_vars],
+                    + [ast.Str(s=str(name)) for name in const_vars],
                     ctx=ast.Load(),
-                )
+                ),
             ],
             keywords=[],
         )
         assign = ast.Assign(
-            targets=[ast.Name(id='Constants', ctx=ast.Store())],
-            value=call
+            targets=[ast.Name(id="Constants", ctx=ast.Store())], value=call
         )
         self._body.append(assign)
-    
+
     def add_const_function(self, const_vars, varlist):
-        func = ast.parse(textwrap.dedent(
-            """
+        func = ast.parse(
+            textwrap.dedent(
+                """
             @numba.njit(fastmath=True)
             def precompute():
                 pass
             """
-        )).body[0]
-        func.args.args = [ast.arg(arg=str(name), annotation=None)
-                          for name in const_vars]
+            )
+        ).body[0]
+        func.args.args = [
+            ast.arg(arg=str(name), annotation=None) for name in const_vars
+        ]
         body = self._varlist_as_assigns(varlist)
         retval = ast.Return(
             value=ast.Call(
-                func=ast.Name(id='Constants', ctx=ast.Load()),
-                args=[ast.Name(id=str(sym), ctx=ast.Load())
-                      for sym, _ in varlist]
-                     + [ast.Name(id=str(sym), ctx=ast.Load())
-                        for sym in const_vars],
+                func=ast.Name(id="Constants", ctx=ast.Load()),
+                args=[ast.Name(id=str(sym), ctx=ast.Load()) for sym, _ in varlist]
+                + [ast.Name(id=str(sym), ctx=ast.Load()) for sym in const_vars],
                 keywords=[],
             )
         )
         body.append(retval)
         func.body = body
         self._body.append(func)
-    
+
     def add_var_function(self, const_vars, const_args, final_vars, varlist, retval):
-        func = ast.parse(textwrap.dedent(
-            """
+        func = ast.parse(
+            textwrap.dedent(
+                """
             @numba.njit(fastmath=True)
             def compute(constants):
                 _, = constants
             """
-        )).body[0]
+            )
+        ).body[0]
         func.args.args.extend(
-            ast.arg(arg=str(name), annotation=None)
-            for name in final_vars
+            ast.arg(arg=str(name), annotation=None) for name in final_vars
         )
         assign_tuple = func.body[0].targets[0]
-        assign_tuple.elts = (
-            [ast.Name(id=str(var), ctx=ast.Store())
-             for var in const_vars]
-            + [ast.Name(id=str(var), ctx=ast.Store())
-               for var in const_args])
+        assign_tuple.elts = [
+            ast.Name(id=str(var), ctx=ast.Store()) for var in const_vars
+        ] + [ast.Name(id=str(var), ctx=ast.Store()) for var in const_args]
         func.body.extend(self._varlist_as_assigns(varlist))
-        retval = ast.Return(
-            value=self._sympy_as_expr(retval)
-        )
+        retval = ast.Return(value=self._sympy_as_expr(retval))
         func.body.append(retval)
         self._body.append(func)
-    
+
     def _sympy_as_expr(self, expr):
         args = list(expr.free_symbols)
-        func = sympy.lambdify(args, expr, 'numpy')
+        func = sympy.lambdify(args, expr, "numpy")
         source = inspect.getsource(func)
         module = ast.parse(source)
         ret = module.body[0].body[-1]
         return ret.value
-    
+
     def _varlist_as_assigns(self, varlist):
         assigns = []
         for symb, val in varlist:
             value_ast = self._sympy_as_expr(val)
             assign = ast.Assign(
-                targets=[ast.Name(id=str(symb), ctx=ast.Store())],
-                value=value_ast,
+                targets=[ast.Name(id=str(symb), ctx=ast.Store())], value=value_ast
             )
             assigns.append(assign)
         return assigns
-    
+
     def as_module(self):
         mod = ast.Module(body=self._body)
         return ast.fix_missing_locations(mod)
-    
+
     def as_string(self):
         import astor
+
         return astor.to_source(self.as_module())
 
-    
+
 class AstLoader(importlib.abc.InspectLoader):
     def __init__(self, asts):
         self._asts = asts
 
     def get_source(self, fullname):
-        if fullname not in self._asts:            
+        if fullname not in self._asts:
             raise ImportError()
         return None
-    
+
     def get_code(self, fullname):
         if fullname not in self._asts:
             raise ImportError()
         return self.source_to_code(self._asts[fullname])
 
-    
+
 def lambdify_consts(module_name, const_args, var_args, expr, debug=False):
     """Compile a sympy expression using numba.
     
@@ -246,7 +247,7 @@ def lambdify_consts(module_name, const_args, var_args, expr, debug=False):
     mod = lam.as_module()
     if debug:
         print(lam.as_string())
-    
+
     loader = AstLoader({module_name: mod})
     spec = importlib.util.spec_from_loader(module_name, loader)
     module = importlib.util.module_from_spec(spec)
