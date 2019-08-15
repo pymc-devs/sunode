@@ -1,5 +1,5 @@
-# /usr/bin/env python
-from cffi import FFI
+#!/usr/bin/env python
+from cffi import FFI  # type: ignore
 import glob
 import os
 

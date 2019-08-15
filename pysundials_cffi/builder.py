@@ -2,19 +2,62 @@ import logging
 import types
 from types import MethodType
 import pydoc
-from typing import Callable
+from typing import Callable, List, Optional
+from typing_extensions import Protocol
+import abc
 
 
 logger = logging.getLogger("pysundials_cffi.builder")
 
 
-def bind(obj: Builder, func: Callable):
+def bind(obj: Builder, func: Callable[[Builder], Builder]) -> None:
     method = MethodType(func, obj)
     setattr(obj, func.__name__, method)
 
 
+'''
+class BuilderOption:
+    def __init__(self, builder: Builder) -> None:
+        self._builder = builder
+
+    @property
+    def _name(self) -> str:
+        return self.__class__.__name__
+
+    def build(self) -> None:
+        pass
+
+#    def __call__(self, *args, **kwargs):
+#        pass
+'''
+
+
+class BuilderOption(Protocol):
+    def __init__(self, builder: Builder) -> None:
+        ...
+
+    def build(self) -> None:
+        ...
+
+    def __call__(self, *args, **kwargs) -> Builder:
+        ...
+
+    @property
+    def name(self) -> str:
+        ...
+
+
 class Builder:
-    def __init__(self, finalize, required=None, optional=None):
+    _all_options = {}
+
+    @classmethod
+    def _option(cls, option_class):
+        name = option_class.__name__
+        option_class.__call__.__name__ = name
+        _all_options[name] = option_class
+
+    def __init__(self, options: List[BuilderOption], required: List[str]) -> None:
+        self._options = {opt._name: opt for opt in options}
         if required is None:
             required = []
         if optional is None:
@@ -83,5 +126,5 @@ class Builder:
         return self
 
     # We tell mypy that there are dynamic methods
-    def __getattr__(self, name: str) -> Callable:
+    def __getattr__(self, name: str) -> BuilderOption:
         raise AttributeError()

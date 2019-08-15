@@ -1,11 +1,11 @@
 import sys
 
-import numpy as np
-from scipy import sparse
-import numba
-import numba.cffi_support
+import numpy as np  # type: ignore
+from scipy import sparse  # type: ignore
+import numba  # type: ignore
+import numba.cffi_support  # type: ignore
 import logging
-from typing import Optional, Tuple, Union, NewType
+from typing import Optional, Tuple, Union, NewType, List, Any, cast, TextIO
 
 from pysundials_cffi import _cvodes
 
@@ -32,17 +32,17 @@ CPointer = NewType("CPointer", int)
 
 
 class Borrows:
-    def __init__(self):
-        self._borrowed = []
+    def __init__(self) -> None:
+        self._borrowed: List[Any] = []
 
-    def borrow(self, arg):
+    def borrow(self, arg: Any) -> None:
         self._borrowed.append(arg)
 
-    def release_borrowed(self):
+    def release_borrowed(self) -> None:
         self._borrowed = []
 
 
-def notnull(ptr: CPointer, msg=None) -> CPointer:
+def notnull(ptr: CPointer, msg: Optional[str] = None) -> CPointer:
     if ptr == ffi.NULL:
         if msg is None:
             raise ValueError("CPointer is NULL.")
@@ -58,10 +58,10 @@ def empty_vector(length: int, kind: str = "serial") -> Vector:
     ptr = lib.N_VNew_Serial(length)
     if ptr is ffi.NULL:
         raise MemoryError("Could not allocate vector.")
-    return Vector(ptr, None)
+    return Vector(ptr)
 
 
-def from_numpy(array, copy: bool = False) -> Vector:
+def from_numpy(array: np.ndarray, copy: bool = False) -> Vector:
     if array.dtype != Vector.dtype:
         raise ValueError("Must have dtype %s" % Vector.dtype)
     if not array.flags["C_CONTIGUOUS"]:
@@ -71,11 +71,13 @@ def from_numpy(array, copy: bool = False) -> Vector:
     if copy:
         array = array.copy()
 
-    data = _ffi.ffi.cast("void *", array.ctypes.get_data())
+    data = ffi.cast("void *", array.ctypes.get_data())
     notnull(data)
     ptr = lib.N_VMake_Serial(len(array), data)
     notnull(ptr)
-    return Vector(ptr, array)
+    vec = Vector(ptr)
+    vec.borrow(array)
+    return vec
 
 
 MATRIX_TYPES = {
@@ -91,14 +93,14 @@ def empty_matrix(
     shape: Tuple[int, int],
     kind: str = "dense",
     format: Optional[str] = None,
-    sparsity=None,
+    sparsity: Union[None, np.ndarray, sparse.csr_matrix, sparse.csc_matrix] = None,
 ) -> Union[DenseMatrix, SparseMatrix]:
     rows, columns = shape
     if kind == "dense":
         ptr = lib.SUNDenseMatrix(rows, columns)
         if ptr == ffi.NULL:
             raise MemoryError("Could not allocate matrix.")
-        return DenseMatrix(ptr, None)
+        return DenseMatrix(ptr)
     elif kind == "band":
         raise NotImplementedError()  # TODO
     elif kind == "sparse":
@@ -119,7 +121,7 @@ def empty_matrix(
         ptr = lib.SUNSparseMatrix(rows, columns, sparsity.nnz, c_format)
         if ptr == ffi.NULL:
             raise MemoryError("Could not allocate matrix.")
-        matrix = SparseMatrix(ptr, None)
+        matrix = SparseMatrix(ptr)
         matrix.indptr[...] = sparsity.indptr
         matrix.indices[...] = sparsity.indices
         return matrix
@@ -127,11 +129,11 @@ def empty_matrix(
         raise ValueError("Unknown matrix type %s" % kind)
 
 
-class SparseMatrix:
+class SparseMatrix(Borrows):
     dtype = np.dtype(data_dtype.name)
     index_dtype = np.dtype(index_dtype.name)
 
-    def __init__(self, c_ptr, data_owner, name=None):
+    def __init__(self, c_ptr: CPointer, *, name: Optional[str] = None):
         notnull(c_ptr)
         self._name = name
         self.c_ptr = c_ptr
@@ -141,20 +143,20 @@ class SparseMatrix:
             raise ValueError("Not a sparse matrix, but of type %s" % kind)
 
     @property
-    def name(self):
+    def name(self) -> str:
         if self._name is not None:
             return self._name
         else:
             return str(self.c_ptr)
 
-    def __del__(self):
+    def __del__(self) -> None:
         logger.debug("Freeing matrix %s" % self.name)
         lib.SUNMatDestroy(self.c_ptr)
-        self.c_ptr = None
-        self._data_owner = None
+        del self.c_ptr
+        self.release_borrowed()
 
     @property
-    def format(self):
+    def format(self) -> str:
         c_type = lib.SUNSparseMatrix_SparseType(self.c_ptr)
         if c_type == lib.CSR_MAT:
             return "csr"
@@ -164,17 +166,17 @@ class SparseMatrix:
             raise ValueError("Unknown matrix format: %s" % c_type)
 
     @property
-    def shape(self):
+    def shape(self) -> Tuple[int, int]:
         rows = lib.SUNSparseMatrix_Rows(self.c_ptr)
         columns = lib.SUNSparseMatrix_Columns(self.c_ptr)
         return (rows, columns)
 
     @property
-    def nnz(self):
-        return lib.SUNSparseMatrix_NNZ(self.c_ptr)
+    def nnz(self) -> int:
+        return cast(int, lib.SUNSparseMatrix_NNZ(self.c_ptr))
 
     @property
-    def scipy(self):
+    def scipy(self) -> Union[sparse.csc_matrix, sparse.csr_matrix]:
         vals = self.data, self.indices, self.indptr
         if self.format == "csr":
             return sparse.csr_matrix(vals, shape=self.shape)
@@ -183,7 +185,7 @@ class SparseMatrix:
         assert False
 
     @property
-    def indices(self):
+    def indices(self) -> np.ndarray:
         size = self.nnz
         ptr = lib.SUNSparseMatrix_IndexValues(self.c_ptr)
         if ptr == ffi.NULL:
@@ -194,7 +196,7 @@ class SparseMatrix:
         return np.frombuffer(buffer, self.index_dtype)
 
     @property
-    def indptr(self):
+    def indptr(self) -> np.ndarray:
         size = lib.SUNSparseMatrix_NP(self.c_ptr)
         size += 1  #
         ptr = lib.SUNSparseMatrix_IndexPointers(self.c_ptr)
@@ -206,7 +208,7 @@ class SparseMatrix:
         return np.frombuffer(buffer, self.index_dtype)
 
     @property
-    def data(self):
+    def data(self) -> np.ndarray:
         size = self.nnz
         ptr = lib.SUNSparseMatrix_Data(self.c_ptr)
         if ptr == ffi.NULL:
@@ -216,12 +218,12 @@ class SparseMatrix:
         buffer = ffi.buffer(ptr, nbytes)
         return np.frombuffer(buffer, self.dtype)
 
-    def c_print(self, file=None):
+    def c_print(self, file: Optional[TextIO] = None) -> None:
         if file is None:
             file = sys.stdout
         lib.SUNSparseMatrix_Print(self.c_ptr, file)
 
-    def realloc(self, size=None):
+    def realloc(self, size: Optional[int] = None) -> None:
         if size is None:
             ret = lib.SUNSparseMatrix_Realloc(self.c_ptr)
         else:
@@ -230,11 +232,11 @@ class SparseMatrix:
             raise RuntimeError("Could not reallocate matrix storage.")
 
 
-class DenseMatrix:
+class DenseMatrix(Borrows):
     dtype = np.dtype(data_dtype.name)
     index_dtype = np.dtype(index_dtype.name)
 
-    def __init__(self, c_ptr, data_owner, name=None):
+    def __init__(self, c_ptr: CPointer, *, name: Optional[str] = None):
         if c_ptr == ffi.NULL:
             raise ValueError("CPointer is NULL.")
         self._name = name
@@ -245,26 +247,26 @@ class DenseMatrix:
             raise ValueError("Not a dense matrix, but of type %s" % kind)
 
     @property
-    def name(self):
+    def name(self) -> str:
         if self._name is not None:
             return self._name
         else:
             return str(self.c_ptr)
 
-    def __del__(self):
+    def __del__(self) -> None:
         logger.debug("Freeing matrix %s" % self.name)
         lib.SUNMatDestroy(self.c_ptr)
-        self.c_ptr = None
-        self._data_owner = None
+        del self.c_ptr
+        self.release_borrowed()
 
     @property
-    def shape(self):
+    def shape(self) -> Tuple[int, int]:
         rows = lib.SUNDenseMatrix_Rows(self.c_ptr)
         columns = lib.SUNDenseMatrix_Columns(self.c_ptr)
         return (rows, columns)
 
     @property
-    def data(self):
+    def data(self) -> np.ndarray:
         size = lib.SUNDenseMatrix_LData(self.c_ptr)
         ptr = lib.SUNDenseMatrix_Data(self.c_ptr)
         assert ptr != ffi.NULL
@@ -275,7 +277,7 @@ class DenseMatrix:
         # Sundials stores dense matrices in fortran order
         return array.reshape((columns, rows)).T
 
-    def as_sparse(self, droptol=0.0, format="csr"):
+    def as_sparse(self, droptol: float = 0.0, format: str = "csr") -> Union[sparse.csr_matrix, sparse.csc_matrix]:
         if format.lower() == "csr":
             c_format = lib.CSR_MAT
         elif format.lower() == "csc":
@@ -286,19 +288,19 @@ class DenseMatrix:
         ptr = lib.SUNSparseFromDenseMatrix(self.c_ptr, droptol, c_format)
         if ptr == ffi.NULL:
             raise ValueError("CPointer is NULL.")
-        return SparseMatrix(ptr, None)
+        return SparseMatrix(ptr)
 
-    def c_print(self, file):
+    def c_print(self, file: Optional[TextIO] = None) -> None:
         if file is None:
             file = sys.stdout
         lib.SUNDenseMatrix_Print(self.c_ptr, file)
 
 
-class Vector:
+class Vector(Borrows):
     dtype = np.dtype(data_dtype.name)
     index_dtype = np.dtype(index_dtype.name)
 
-    def __init__(self, c_ptr, data_owner, name=None):
+    def __init__(self, c_ptr: CPointer, *, name: Optional[str] = None) -> None:
         if c_ptr == ffi.NULL:
             raise ValueError("CPointer is NULL.")
         self._name = name
@@ -307,30 +309,30 @@ class Vector:
         self._data_owner = None
 
     @property
-    def name(self):
+    def name(self) -> str:
         if self._name is not None:
             return self._name
         else:
             return str(self.c_ptr)
 
-    def __del__(self):
+    def __del__(self) -> None:
         logger.debug("Freeing vector %s" % self.name)
         lib.N_VDestroy_Serial(self.c_ptr)
-        self.c_ptr = None
-        self._data_owner = None
+        del self.c_ptr
+        self.release_borrowed()
 
-    def c_print(self, file=None):
+    def c_print(self, file: Optional[TextIO] = None) -> None:
         if file is None:
-            lib.N_VPrint_Serial(self.c_ptr)
+            file = sys.stdout
         else:
-            lib.N_VPrintFile_Serial(self.c_ptr, file)
+            lib.N_VPrintFile_Serial(self.c_ptr, file.fileno())
 
     @property
-    def shape(self):
+    def shape(self) -> Tuple[int]:
         return (lib.N_VGetLength_Serial(self.c_ptr),)
 
     @property
-    def data(self):
-        data_ptr = lib.N_VGetArrayPointer_Serial(c_ptr)
+    def data(self) -> np.ndarray:
+        data_ptr = lib.N_VGetArrayPointer_Serial(self.c_ptr)
         buffer = ffi.buffer(data_ptr, self.shape[0] * self.dtype.itemsize)
         return np.frombuffer(buffer, self.dtype)

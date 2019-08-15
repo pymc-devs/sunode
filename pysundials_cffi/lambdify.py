@@ -1,13 +1,20 @@
-import sympy
 from itertools import count
 import ast
 import textwrap
 import importlib
 import sys
 import inspect
+from typing import List, Any, NewType, Iterator, Tuple, Optional, Dict
+
+import sympy  # type: ignore
 
 
-def split_constants(expr, variables, names):
+Symbol = Any
+
+
+def split_constants(
+    expr: Symbol, variables: List[Symbol], names: Iterator[str]
+) -> Tuple[List[Tuple[str, Symbol]], Symbol]:
     if (
         not isinstance(expr, sympy.Expr)
         or isinstance(expr, sympy.Symbol)
@@ -29,7 +36,9 @@ def split_constants(expr, variables, names):
     return consts, expr.func(*args)
 
 
-def cse_const(expr, args):
+def cse_const(
+    expr: Symbol, args: List[Symbol]
+) -> Tuple[List[Tuple[str, Symbol]], List[Tuple[str, Symbol]], Symbol]:
     var_exprs = []
     const_exprs = []
     variables = list(args)
@@ -54,12 +63,16 @@ def cse_const(expr, args):
 
 
 class LambdifyAST:
-    def __init__(self, glob=None, locale=None):
+    def __init__(
+        self,
+        glob: Optional[Dict[str, Any]] = None,
+        locale: Optional[Dict[str, Any]] = None,
+    ):
         self._global = glob
         self._locale = locale
-        self._body = []
+        self._body: List[ast.AST] = []
 
-    def add_imports(self):
+    def add_imports(self) -> None:
         imports = ast.parse(
             textwrap.dedent(
                 """
@@ -77,7 +90,7 @@ class LambdifyAST:
         )
         self._body.extend(imports.body)
 
-    def add_const_namedtuple(self, const_vars, vars):
+    def add_const_namedtuple(self, const_vars: List[Symbol], vars: List[Symbol]) -> None:
         call = ast.Call(
             func=ast.Name(id="namedtuple", ctx=ast.Load()),
             args=[
@@ -166,7 +179,7 @@ class LambdifyAST:
         return ast.fix_missing_locations(mod)
 
     def as_string(self):
-        import astor
+        import astor  # type: ignore
 
         return astor.to_source(self.as_module())
 
