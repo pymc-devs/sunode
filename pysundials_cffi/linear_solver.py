@@ -2,10 +2,17 @@ import logging
 from typing import Optional, Tuple, List, Any, Dict
 
 from pysundials_cffi import _cvodes
-from pysundials_cffi.basic import data_dtype, index_dtype, notnull, Borrows, CPointer, DenseMatrix, SparseMatrix
+from pysundials_cffi.basic import (
+    data_dtype,
+    index_dtype,
+    notnull,
+    Borrows,
+    CPointer,
+    DenseMatrix,
+    SparseMatrix,
+)
 from pysundials_cffi import basic
 from pysundials_cffi.solver import SolverBuilder, SolverOption
-from pysundials_cffi.builder import BuilderOption
 
 
 __all__ = ["linear_solver"]
@@ -16,9 +23,7 @@ lib = _cvodes.lib
 ffi = _cvodes.ffi
 
 
-LINEAR_SOLVERS = {
-    "direct": lib.SUNLINEARSOLVER_DIRECT,
-}
+LINEAR_SOLVERS = {"direct": lib.SUNLINEARSOLVER_DIRECT}
 
 
 @SolverBuilder._option
@@ -27,12 +32,12 @@ class superlu_threads(SolverOption):
         """Change the number of threads superlu will use for matrix factorization."""
         self._builder._option_data.superlu_threads = num_threads
         # The option is used in `linear_solver` in the constructor of the solver.
-        return self._builder._modify(['superlu_threads'])
+        return self._builder._modify(["superlu_threads"])
 
 
 @SolverBuilder._option
 class superlu_ordering(SolverOption):
-    def __call_(self, ordering: str) -> SolverBuilder
+    def __call_(self, ordering: str) -> SolverBuilder:
         """Choose which ordering method SuperLU should use.
 
         Options are:
@@ -46,7 +51,7 @@ class superlu_ordering(SolverOption):
         return self._builder._modify(["superlu_ordering"])
 
     def build(self) -> None:
-        if hasattr(self, 'superlu_ordering'):
+        if hasattr(self, "superlu_ordering"):
             ret = lib.SUNLinSol_SuperLUMTSetOrdering(self.superlu_ordering)
             if ret != lib.SUNLS_SUCCESS:
                 raise ValueError("Could not set ordering.")
@@ -56,12 +61,12 @@ class superlu_ordering(SolverOption):
 class klu_ordering(SolverOption):
     def __call__(self, ordering):
         """Change the ordering klu will use for matrix factorization."""
-        #self._builder._option_data.klu_ordering = ordering
+        # self._builder._option_data.klu_ordering = ordering
         self.ordering = ordering
 
     def build(self) -> None:
-        #ordering = self._builder._option_data.klu_ordering
-        if not hasattr(self, 'ordering'):
+        # ordering = self._builder._option_data.klu_ordering
+        if not hasattr(self, "ordering"):
             return
         if self.ordering == 1:  # NotImplementedError
             lib.SUNLinSol_KLUSetOrdering()
@@ -73,36 +78,40 @@ class linear_solver(SolverOption):
         jac_type = self._builder._option_data.jacobian
         if kind is None:
             if jac_type is None:
-                self._builder.jacobian('dense')
+                self._builder.jacobian("dense")
                 jac_type = self._builder._option_data.jacobian
 
-            if jac_type == 'dense':
-                kind = 'dense'
-            elif jac_type == 'band':
-                kind = 'band'
-            elif jac_type == 'sparse':
-                kind = 'klu'
-            elif jac_type == 'matmult':
+            if jac_type == "dense":
+                kind = "dense"
+            elif jac_type == "band":
+                kind = "band"
+            elif jac_type == "sparse":
+                kind = "klu"
+            elif jac_type == "matmult":
                 raise NotImplementedError()
             else:
-                raise ValueError('Unknown jacobian %s.' % jac_type)
+                raise ValueError("Unknown jacobian %s." % jac_type)
         elif jac_type is None:
-            if kind in ['dense', 'lapack-dense']:
-                self._builder.jacobian('dense')
-            elif kind in ['band', 'lapack-band']:
-                self._builder.jacobian('band')
-            elif kind in ['klu', 'superlu']:
-                self._builder.jacobian('sparse')
+            if kind in ["dense", "lapack-dense"]:
+                self._builder.jacobian("dense")
+            elif kind in ["band", "lapack-band"]:
+                self._builder.jacobian("band")
+            elif kind in ["klu", "superlu"]:
+                self._builder.jacobian("sparse")
             elif kind in [...]:
                 raise NotImplementedError()
             else:
-                raise ValueError('Unknown linear solver %s' % kind)
+                raise ValueError("Unknown linear solver %s" % kind)
 
         jac_type = self._builder._option_data.jacobian
-        if kind in ['klu', 'superlu']:
-            opts, required = self._prepare_sparse_options(kind)
-        elif kind in ['dense', 'band', 'lapack-dense', 'lapack-band']:
-            opts, required = [], []
+        opts: List[SolverOption] = []
+        required: List[str] = []
+        if kind in ["klu", "superlu"]:
+            opts_, required_ = self._prepare_sparse_options(kind)
+            opts.extend(opts_)
+            required.extend(required_)
+        elif kind in ["dense", "band", "lapack-dense", "lapack-band"]:
+            pass
         else:
             raise NotImplementedError()
 
@@ -113,10 +122,12 @@ class linear_solver(SolverOption):
 
         return self._builder
 
-    def _prepare_sparse_options(self, kind: str) -> Tuple[List[BuilderOption], List[str]]:
-        opts = []
-        req = []
-        if kind == 'klu':
+    def _prepare_sparse_options(
+        self, kind: str
+    ) -> Tuple[List[SolverOption], List[str]]:
+        opts: List[SolverOption] = []
+        req: List[SolverOption] = []
+        if kind == "klu":
             pass
         raise NotImplementedError()
 
@@ -138,38 +149,38 @@ class linear_solver(SolverOption):
         assert y is not None
         assert jac is not None
 
-        if kind == 'dense':
+        if kind == "dense":
             assert isinstance(jac, DenseMatrix)
             ptr = lib.SUNLinSol_Dense(y.c_ptr, jac.c_ptr)
-        elif kind == 'band':
+        elif kind == "band":
             raise NotImplementedError()
-            assert isinstance(jac, BandMatrix)
+            assert isinstance(jac, basic.BandMatrix)
             ptr = lib.SUNLinSol_Band(y.c_ptr, jac.c_ptr)
-        elif kind == 'lapack-dense':
+        elif kind == "lapack-dense":
             assert isinstance(jac, DenseMatrix)
             ptr = lib.SUNLinSol_LapackDense(y.c_ptr, jac.c_ptr)
-        elif kind == 'lapack-band':
+        elif kind == "lapack-band":
             raise NotImplementedError()
-            assert isinstance(jac, BandMatrix)
+            assert isinstance(jac, basic.BandMatrix)
             ptr = lib.SUNLinSol_LapackBand(y.c_ptr, jac.c_ptr)
-        elif kind == 'klu':
+        elif kind == "klu":
             assert isinstance(jac, SparseMatrix)
             ptr = lib.SUNLinSol_KLU(y.c_ptr, jac.c_ptr)
-        elif kind == 'superlu':
+        elif kind == "superlu":
             assert isinstance(jac, SparseMatrix)
             num_threads = self._builder._option_data.superlu_threads
             if num_threads is None:
                 num_threads = 1
             ptr = lib.SUNLinSol_SuperLUMT(y.c_ptr, jac.c_ptr, num_threads)
         else:
-            raise ValueError('Unknown linear solver %s' % kind)
+            raise ValueError("Unknown linear solver %s" % kind)
 
         solver = LinearSolver(ptr)
         solver.borrow(y)
         solver.borrow(jac)
         data.linear_solver = solver
 
-        notnull(ptr, 'Linear solver creation failed.')
+        notnull(ptr, "Linear solver creation failed.")
         for option in self._dependent_options:
             option.build()
 

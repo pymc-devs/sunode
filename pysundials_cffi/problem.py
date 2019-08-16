@@ -3,10 +3,9 @@ from typing_extensions import Protocol
 from .basic import DenseMatrix, SparseMatrix, BandMatrix
 
 
-T = TypeVar('T')
+T = TypeVar("T")
 Maybe = Union[NotImplemented, T]
 Matrix = Union[DenseMatrix, SparseMatrix, BandMatrix]
-
 
 
 class OdeProblem(Protocol):
@@ -40,15 +39,15 @@ class SympyOde(OdeProblem):
         pass
 
     def request_jac_func(self, kind) -> Maybe[Tuple[Matrix, JacCallback]]:
-        if kind == 'dense':
+        if kind == "dense":
             pass
-        elif kind == 'band':
+        elif kind == "band":
             pass
-        elif kind == 'sparse-csr':
+        elif kind == "sparse-csr":
             pass
-        elif kind == 'sparse-csc':
+        elif kind == "sparse-csc":
             pass
-        elif kind == 'jacmult':
+        elif kind == "jacmult":
             pass
         else:
             return NotImplemented

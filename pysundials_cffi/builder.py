@@ -2,34 +2,14 @@ import logging
 import types
 from types import MethodType
 import pydoc
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Type, Dict
 from typing_extensions import Protocol
 import abc
 
+from .problem import OdeProblem
+
 
 logger = logging.getLogger("pysundials_cffi.builder")
-
-
-def bind(obj: Builder, func: Callable[[Builder], Builder]) -> None:
-    method = MethodType(func, obj)
-    setattr(obj, func.__name__, method)
-
-
-'''
-class BuilderOption:
-    def __init__(self, builder: Builder) -> None:
-        self._builder = builder
-
-    @property
-    def _name(self) -> str:
-        return self.__class__.__name__
-
-    def build(self) -> None:
-        pass
-
-#    def __call__(self, *args, **kwargs):
-#        pass
-'''
 
 
 class BuilderOption(Protocol):
@@ -48,7 +28,7 @@ class BuilderOption(Protocol):
 
 
 class Builder:
-    _all_options = {}
+    _all_options: Dict[str, Type[BuilderOption]] = {}
 
     @classmethod
     def _option(cls, option_class):
@@ -56,44 +36,48 @@ class Builder:
         option_class.__call__.__name__ = name
         _all_options[name] = option_class
 
-    def __init__(self, options: List[BuilderOption], required: List[str]) -> None:
-        self._options = {opt._name: opt for opt in options}
-        if required is None:
-            required = []
-        if optional is None:
-            optional = []
+    def __init__(
+        self, problem: OdeProblem, options: List[BuilderOption], required: List[str]
+    ) -> None:
+        self._options = {opt.name: opt for opt in options}
+        self._problem = problem
+
         self._required = required
-        self._optional = optional
-        self._finalize = finalize
+        req = set(required)
+        self._optional = [option for option in self._options if option not in req]
 
-        for func in self._required:
-            bind(self, func)
-        for func in self._optional:
-            bind(self, func)
-        self.__doc__ = self._make_docstring()
+        self.__doc__ = self._make_docstring(subset="all")
 
-    def finalize(self):
-        if self._required:
-            raise ValueError(
-                "Not all required methods were called. Missing %s"
-                % [f.__name__ for f in self._required]
+    def help(self, subset: str = "possible") -> None:
+        print(self._make_docstring(subset=subset))
+
+    def _make_docstring(self, subset: str = "all") -> str:
+        if subset == "all":
+            methods = "\n".join(
+                pydoc.plaintext.document(option.__call__)
+                for option in self._all_options.values()
             )
-        return self._finalize(self)
-
-    def options(self):
-        print(self.__doc__)
-
-    def _make_docstring(self):
-        sections = []
-        if self._required:
-            sec = "\n".join(pydoc.plaintext.document(func) for func in self._required)
-            sec = pydoc.plaintext.section("Required methods", sec)
-            sections.append(sec)
-        if self._optional:
-            sec = "\n".join(pydoc.plaintext.document(func) for func in self._optional)
-            sec = pydoc.plaintext.section("Optional methods", sec)
-            sections.append(sec)
-        return "\n".join(sections)
+            return pydoc.plaintext.section("All possible options", methods)
+        elif subset == "possible":
+            sections = []
+            if self._required:
+                sec = "\n".join(
+                    pydoc.plaintext.document(self._options[opt].__class__.__call__)
+                    for opt in self._required
+                )
+                sec = pydoc.plaintext.section("Required options", sec)
+                sections.append(sec)
+            if self._optional:
+                sec = "\n".join(
+                    pydoc.plaintext.document(self._options[opt].__class__.__call__)
+                    for opt in self._optional
+                )
+                sec = pydoc.plaintext.section("Optional options", sec)
+                sections.append(sec)
+            return "\n".join(sections)
+        raise ValueError(
+            'Invalid subset: %s. Must be one of "all" or "possible"' % subset
+        )
 
     def _modify(self, remove=None, required=None, optional=None):
         if remove is not None:

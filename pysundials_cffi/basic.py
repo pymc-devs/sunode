@@ -1,3 +1,4 @@
+from __future__ import annotations
 import sys
 
 import numpy as np  # type: ignore
@@ -26,6 +27,8 @@ numba.cffi_support.register_type(
 
 data_dtype = numba.cffi_support.map_type(ffi.typeof("realtype"))
 index_dtype = numba.cffi_support.map_type(ffi.typeof("sunindextype"))
+data_dtype = np.dtype(data_dtype.name)
+index_dtype = np.dtype(index_dtype.name)
 
 
 CPointer = NewType("CPointer", int)
@@ -52,7 +55,10 @@ def notnull(ptr: CPointer, msg: Optional[str] = None) -> CPointer:
 
 
 def empty_vector(length: int, kind: str = "serial") -> Vector:
-    assert kind == "serial"
+    if kind not in ["serial"]:
+        raise ValueError("Vector backend %s not supported." % kind)
+    if length < 0:
+        raise ValueError("Length must not be negative.")
     if kind != "serial":
         raise NotImplementedError()
     ptr = lib.N_VNew_Serial(length)
@@ -96,6 +102,8 @@ def empty_matrix(
     sparsity: Union[None, np.ndarray, sparse.csr_matrix, sparse.csc_matrix] = None,
 ) -> Union[DenseMatrix, SparseMatrix]:
     rows, columns = shape
+    if rows < 0 or columns < 0:
+        raise ValueError("Number of rows and columns must not be negative.")
     if kind == "dense":
         ptr = lib.SUNDenseMatrix(rows, columns)
         if ptr == ffi.NULL:
@@ -134,6 +142,7 @@ class SparseMatrix(Borrows):
     index_dtype = np.dtype(index_dtype.name)
 
     def __init__(self, c_ptr: CPointer, *, name: Optional[str] = None):
+        super().__init__()
         notnull(c_ptr)
         self._name = name
         self.c_ptr = c_ptr
@@ -232,13 +241,17 @@ class SparseMatrix(Borrows):
             raise RuntimeError("Could not reallocate matrix storage.")
 
 
+class BandMatrix(Borrows):
+    pass
+
+
 class DenseMatrix(Borrows):
     dtype = np.dtype(data_dtype.name)
     index_dtype = np.dtype(index_dtype.name)
 
     def __init__(self, c_ptr: CPointer, *, name: Optional[str] = None):
-        if c_ptr == ffi.NULL:
-            raise ValueError("CPointer is NULL.")
+        super().__init__()
+        notnull(c_ptr)
         self._name = name
         self.c_ptr = c_ptr
         c_kind = lib.SUNMatGetID(c_ptr)
@@ -277,7 +290,9 @@ class DenseMatrix(Borrows):
         # Sundials stores dense matrices in fortran order
         return array.reshape((columns, rows)).T
 
-    def as_sparse(self, droptol: float = 0.0, format: str = "csr") -> Union[sparse.csr_matrix, sparse.csc_matrix]:
+    def as_sparse(
+        self, droptol: float = 0.0, format: str = "csr"
+    ) -> Union[sparse.csr_matrix, sparse.csc_matrix]:
         if format.lower() == "csr":
             c_format = lib.CSR_MAT
         elif format.lower() == "csc":
@@ -301,12 +316,15 @@ class Vector(Borrows):
     index_dtype = np.dtype(index_dtype.name)
 
     def __init__(self, c_ptr: CPointer, *, name: Optional[str] = None) -> None:
-        if c_ptr == ffi.NULL:
-            raise ValueError("CPointer is NULL.")
+        super().__init__()
+        notnull(c_ptr)
         self._name = name
         self.c_ptr = c_ptr
         self._size = lib.N_VGetLength_Serial(c_ptr)
         self._data_owner = None
+
+    def __len__(self) -> int:
+        return self.shape[0]
 
     @property
     def name(self) -> str:

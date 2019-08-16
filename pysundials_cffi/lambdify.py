@@ -90,7 +90,9 @@ class LambdifyAST:
         )
         self._body.extend(imports.body)
 
-    def add_const_namedtuple(self, const_vars: List[Symbol], vars: List[Symbol]) -> None:
+    def add_const_namedtuple(
+        self, const_vars: List[Symbol], vars: List[Symbol]
+    ) -> None:
         call = ast.Call(
             func=ast.Name(id="namedtuple", ctx=ast.Load()),
             args=[
