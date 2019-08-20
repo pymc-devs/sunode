@@ -1,5 +1,6 @@
 from __future__ import annotations
 import sys
+import weakref
 
 import numpy as np  # type: ignore
 from scipy import sparse  # type: ignore
@@ -10,7 +11,9 @@ from typing import Optional, Tuple, Union, NewType, List, Any, cast, TextIO
 
 from pysundials_cffi import _cvodes
 
+
 __all__ = ["from_numpy", "empty_vector", "empty_matrix"]
+
 
 logger = logging.getLogger("pysundials_cffi.basic")
 
@@ -41,8 +44,14 @@ class Borrows:
     def borrow(self, arg: Any) -> None:
         self._borrowed.append(arg)
 
-    def release_borrowed(self) -> None:
-        self._borrowed = []
+    def release_borrowed_func(self) -> None:
+        borrowed = self._borrowed
+        # Does not keep a reference to self
+        def release():
+            print(borrowed)
+            borrowed.clear()
+
+        return release
 
 
 def notnull(ptr: CPointer, msg: Optional[str] = None) -> CPointer:
@@ -62,7 +71,7 @@ def empty_vector(length: int, kind: str = "serial") -> Vector:
     if kind != "serial":
         raise NotImplementedError()
     ptr = lib.N_VNew_Serial(length)
-    if ptr is ffi.NULL:
+    if ptr == ffi.NULL:
         raise MemoryError("Could not allocate vector.")
     return Vector(ptr)
 
@@ -77,7 +86,7 @@ def from_numpy(array: np.ndarray, copy: bool = False) -> Vector:
     if copy:
         array = array.copy()
 
-    data = ffi.cast("void *", array.ctypes.get_data())
+    data = ffi.cast("void *", ffi.from_buffer(array))
     notnull(data)
     ptr = lib.N_VMake_Serial(len(array), data)
     notnull(ptr)
@@ -137,6 +146,47 @@ def empty_matrix(
         raise ValueError("Unknown matrix type %s" % kind)
 
 
+class RefCount:
+    def __init__(self):
+        self.count: int = 0
+
+    def borrow(self):
+        self.count += 1
+
+    def release(self):
+        assert self.count > 0
+        self.count -= 1
+
+    def is_zero(self):
+        assert self.count >= 0
+        return self.count == 0
+
+
+def _as_numpy(
+    owner: Any,
+    ptr: CPointer,
+    size: int,
+    dtype: np.dtype,
+    counter: Optional[RefCount] = None,
+):
+    if size < 0:
+        raise ValueError('Array size must not be negative.')
+
+    if size != 0:
+        notnull(ptr)
+
+    def release(ptr):
+        nonlocal owner
+        if counter is not None:
+            counter.release()
+
+    if counter is not None:
+        counter.borrow()
+    ptr = ffi.gc(ptr, release)
+    buffer = ffi.buffer(ptr, size * dtype.itemsize)
+    return np.frombuffer(buffer, dtype)
+
+
 class SparseMatrix(Borrows):
     dtype = np.dtype(data_dtype.name)
     index_dtype = np.dtype(index_dtype.name)
@@ -144,8 +194,20 @@ class SparseMatrix(Borrows):
     def __init__(self, c_ptr: CPointer, *, name: Optional[str] = None):
         super().__init__()
         notnull(c_ptr)
+        self._buffer_refcount = RefCount()
         self._name = name
         self.c_ptr = c_ptr
+
+        def finalize(ptr, name, release_borrowed):
+            if ptr == ffi.NULL:
+                logger.error("Trying to free matrix %s, but c_ptr is NULL" % name)
+            else:
+                logger.debug("Freeing matrix %s" % name)
+                lib.SUNMatDestroy(ptr)
+            release_borrowed()
+
+        weakref.finalize(self, finalize, c_ptr, self.name, self.release_borrowed_func())
+
         c_kind = lib.SUNMatGetID(c_ptr)
         kind = MATRIX_TYPES_REV.get(c_kind, c_kind)
         if kind != "sparse":
@@ -157,12 +219,6 @@ class SparseMatrix(Borrows):
             return self._name
         else:
             return str(self.c_ptr)
-
-    def __del__(self) -> None:
-        logger.debug("Freeing matrix %s" % self.name)
-        lib.SUNMatDestroy(self.c_ptr)
-        del self.c_ptr
-        self.release_borrowed()
 
     @property
     def format(self) -> str:
@@ -197,35 +253,20 @@ class SparseMatrix(Borrows):
     def indices(self) -> np.ndarray:
         size = self.nnz
         ptr = lib.SUNSparseMatrix_IndexValues(self.c_ptr)
-        if ptr == ffi.NULL:
-            raise ValueError("Matrix does not contain data.")
-
-        nbytes = self.index_dtype.itemsize * size
-        buffer = ffi.buffer(ptr, nbytes)
-        return np.frombuffer(buffer, self.index_dtype)
+        return _as_numpy(self, ptr, size, self.index_dtype, self._buffer_refcount)
 
     @property
     def indptr(self) -> np.ndarray:
         size = lib.SUNSparseMatrix_NP(self.c_ptr)
         size += 1  #
         ptr = lib.SUNSparseMatrix_IndexPointers(self.c_ptr)
-        if ptr == ffi.NULL:
-            raise ValueError("Matrix does not contain data.")
-
-        nbytes = self.index_dtype.itemsize * size
-        buffer = ffi.buffer(ptr, nbytes)
-        return np.frombuffer(buffer, self.index_dtype)
+        return _as_numpy(self, ptr, size, self.index_dtype, self._buffer_refcount)
 
     @property
     def data(self) -> np.ndarray:
         size = self.nnz
         ptr = lib.SUNSparseMatrix_Data(self.c_ptr)
-        if ptr == ffi.NULL:
-            raise ValueError("Matrix does not contain data.")
-
-        nbytes = self.dtype.itemsize * size
-        buffer = ffi.buffer(ptr, nbytes)
-        return np.frombuffer(buffer, self.dtype)
+        return _as_numpy(self, ptr, size, self.dtype, self._buffer_refcount)
 
     def c_print(self, file: Optional[TextIO] = None) -> None:
         if file is None:
@@ -233,6 +274,10 @@ class SparseMatrix(Borrows):
         lib.SUNSparseMatrix_Print(self.c_ptr, file)
 
     def realloc(self, size: Optional[int] = None) -> None:
+        if not self._buffer_refcount.is_zero():
+            raise RuntimeError(
+                "Can not reallocate matrix while numpy views of data are alive."
+            )
         if size is None:
             ret = lib.SUNSparseMatrix_Realloc(self.c_ptr)
         else:
@@ -254,6 +299,17 @@ class DenseMatrix(Borrows):
         notnull(c_ptr)
         self._name = name
         self.c_ptr = c_ptr
+
+        def finalize(ptr, name, release_borrowed):
+            if ptr == ffi.NULL:
+                logger.error("Trying to free matrix %s, but c_ptr is NULL" % name)
+            else:
+                logger.debug("Freeing matrix %s" % name)
+                lib.SUNMatDestroy(ptr)
+            release_borrowed()
+
+        weakref.finalize(self, finalize, c_ptr, self.name, self.release_borrowed_func())
+
         c_kind = lib.SUNMatGetID(c_ptr)
         kind = MATRIX_TYPES_REV.get(c_kind, c_kind)
         if kind != "dense":
@@ -266,12 +322,6 @@ class DenseMatrix(Borrows):
         else:
             return str(self.c_ptr)
 
-    def __del__(self) -> None:
-        logger.debug("Freeing matrix %s" % self.name)
-        lib.SUNMatDestroy(self.c_ptr)
-        del self.c_ptr
-        self.release_borrowed()
-
     @property
     def shape(self) -> Tuple[int, int]:
         rows = lib.SUNDenseMatrix_Rows(self.c_ptr)
@@ -282,10 +332,8 @@ class DenseMatrix(Borrows):
     def data(self) -> np.ndarray:
         size = lib.SUNDenseMatrix_LData(self.c_ptr)
         ptr = lib.SUNDenseMatrix_Data(self.c_ptr)
-        assert ptr != ffi.NULL
-        nbytes = self.dtype.itemsize * size
-        buffer = ffi.buffer(ptr, nbytes)
-        array = np.frombuffer(buffer, self.dtype)
+        array = _as_numpy(self, ptr, size, self.dtype)
+
         rows, columns = self.shape
         # Sundials stores dense matrices in fortran order
         return array.reshape((columns, rows)).T
@@ -317,11 +365,23 @@ class Vector(Borrows):
 
     def __init__(self, c_ptr: CPointer, *, name: Optional[str] = None) -> None:
         super().__init__()
-        notnull(c_ptr)
         self._name = name
+        notnull(c_ptr)
         self.c_ptr = c_ptr
+
+        def finalize(ptr, name, release_borrowed):
+            if ptr == ffi.NULL:
+                logger.error("Trying to free c_ptr of vector %s but it is NULL" % name)
+            else:
+                logger.debug("Freeing vector %s" % name)
+                lib.N_VDestroy_Serial(ptr)
+            release_borrowed()
+
+        weakref.finalize(
+            self, finalize, self.c_ptr, self.name, self.release_borrowed_func()
+        )
+
         self._size = lib.N_VGetLength_Serial(c_ptr)
-        self._data_owner = None
 
     def __len__(self) -> int:
         return self.shape[0]
@@ -332,12 +392,6 @@ class Vector(Borrows):
             return self._name
         else:
             return str(self.c_ptr)
-
-    def __del__(self) -> None:
-        logger.debug("Freeing vector %s" % self.name)
-        lib.N_VDestroy_Serial(self.c_ptr)
-        del self.c_ptr
-        self.release_borrowed()
 
     def c_print(self, file: Optional[TextIO] = None) -> None:
         if file is None:
@@ -351,6 +405,5 @@ class Vector(Borrows):
 
     @property
     def data(self) -> np.ndarray:
-        data_ptr = lib.N_VGetArrayPointer_Serial(self.c_ptr)
-        buffer = ffi.buffer(data_ptr, self.shape[0] * self.dtype.itemsize)
-        return np.frombuffer(buffer, self.dtype)
+        ptr = lib.N_VGetArrayPointer_Serial(self.c_ptr)
+        return _as_numpy(self, ptr, len(self), self.dtype)
