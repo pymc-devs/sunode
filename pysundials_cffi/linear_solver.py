@@ -1,18 +1,10 @@
 import logging
-from typing import Optional, Tuple, List, Any, Dict
+from typing import Optional, Tuple, List, cast
 
 from pysundials_cffi import _cvodes
-from pysundials_cffi.basic import (
-    data_dtype,
-    index_dtype,
-    notnull,
-    Borrows,
-    CPointer,
-    DenseMatrix,
-    SparseMatrix,
-)
+from pysundials_cffi.basic import notnull, DenseMatrix, SparseMatrix
 from pysundials_cffi import basic
-from pysundials_cffi.solver import SolverBuilder, SolverOption
+from pysundials_cffi.solver import SolverBuilder, SolverOption, jacobian
 
 
 __all__ = ["linear_solver"]
@@ -28,11 +20,10 @@ LINEAR_SOLVERS = {"direct": lib.SUNLINEARSOLVER_DIRECT}
 
 @SolverBuilder._option
 class superlu_threads(SolverOption):
-    def __call__(self, num_threads: int) -> SolverBuilder:
+    def __call__(self, num_threads: int):
         """Change the number of threads superlu will use for matrix factorization."""
-        self._builder._option_data.superlu_threads = num_threads
+        self.builder._option_data.superlu_threads = num_threads
         # The option is used in `linear_solver` in the constructor of the solver.
-        return self._builder._modify(["superlu_threads"])
 
 
 @SolverBuilder._option
@@ -48,7 +39,7 @@ class superlu_ordering(SolverOption):
         """
         num = {"natural": 0, "AtA": 1, "At+A": 2, "colamd": 3}
         self.superlu_ordering = num[ordering]
-        return self._builder._modify(["superlu_ordering"])
+        return self.builder
 
     def build(self) -> None:
         if hasattr(self, "superlu_ordering"):
@@ -59,13 +50,12 @@ class superlu_ordering(SolverOption):
 
 @SolverBuilder._option
 class klu_ordering(SolverOption):
-    def __call__(self, ordering):
+    def __call__(self, ordering: str) -> SolverBuilder:
         """Change the ordering klu will use for matrix factorization."""
-        # self._builder._option_data.klu_ordering = ordering
         self.ordering = ordering
+        return self.builder
 
     def build(self) -> None:
-        # ordering = self._builder._option_data.klu_ordering
         if not hasattr(self, "ordering"):
             return
         if self.ordering == 1:  # NotImplementedError
@@ -75,11 +65,11 @@ class klu_ordering(SolverOption):
 @SolverBuilder._option
 class linear_solver(SolverOption):
     def __call__(self, kind: Optional[str] = None) -> SolverBuilder:
-        jac_type = self._builder._option_data.jacobian
+        jac_type = self.builder._option_data.jacobian
         if kind is None:
             if jac_type is None:
-                self._builder.jacobian("dense")
-                jac_type = self._builder._option_data.jacobian
+                cast(jacobian, self.builder.jacobian)("dense")
+                jac_type = self.builder._option_data.jacobian
 
             if jac_type == "dense":
                 kind = "dense"
@@ -92,18 +82,19 @@ class linear_solver(SolverOption):
             else:
                 raise ValueError("Unknown jacobian %s." % jac_type)
         elif jac_type is None:
+            jac_option = cast(jacobian, self.builder.jacobian)
             if kind in ["dense", "lapack-dense"]:
-                self._builder.jacobian("dense")
+                jac_option("dense")
             elif kind in ["band", "lapack-band"]:
-                self._builder.jacobian("band")
+                jac_option("band")
             elif kind in ["klu", "superlu"]:
-                self._builder.jacobian("sparse")
+                jac_option("sparse")
             elif kind in [...]:
                 raise NotImplementedError()
             else:
                 raise ValueError("Unknown linear solver %s" % kind)
 
-        jac_type = self._builder._option_data.jacobian
+        jac_type = self.builder._option_data.jacobian
         opts: List[SolverOption] = []
         required: List[str] = []
         if kind in ["klu", "superlu"]:
@@ -115,12 +106,12 @@ class linear_solver(SolverOption):
         else:
             raise NotImplementedError()
 
-        self._builder._add(opts, required)
+        self.builder._add(opts)
+        self.builder._make_required(required)
         self._dependent_options = opts
 
         self.kind = kind
-
-        return self._builder
+        return self.builder
 
     def _prepare_sparse_options(
         self, kind: str
@@ -143,7 +134,7 @@ class linear_solver(SolverOption):
         raise NotImplementedError()
 
     def _build_direct(self, kind: str) -> None:
-        data = self._builder._build_data
+        data = self.builder._build_data
         y = data.y_template
         jac = data.jac_template
         assert y is not None
@@ -168,14 +159,14 @@ class linear_solver(SolverOption):
             ptr = lib.SUNLinSol_KLU(y.c_ptr, jac.c_ptr)
         elif kind == "superlu":
             assert isinstance(jac, SparseMatrix)
-            num_threads = self._builder._option_data.superlu_threads
+            num_threads = self.builder._option_data.superlu_threads
             if num_threads is None:
                 num_threads = 1
             ptr = lib.SUNLinSol_SuperLUMT(y.c_ptr, jac.c_ptr, num_threads)
         else:
             raise ValueError("Unknown linear solver %s" % kind)
 
-        solver = LinearSolver(ptr)
+        solver = basic.LinearSolver(ptr)
         solver.borrow(y)
         solver.borrow(jac)
         data.linear_solver = solver
@@ -185,23 +176,3 @@ class linear_solver(SolverOption):
             option.build()
 
         solver.initialize()
-
-
-class LinearSolver(Borrows):
-    def __init__(self, c_ptr: CPointer) -> None:
-        super().__init__()
-        notnull(c_ptr, "Linear solver cpointer is NULL.")
-        self.c_ptr = c_ptr
-
-    def initialize(self) -> None:
-        ret = lib.SUNLinSolInitialize(self.c_ptr)
-        if ret != 0:
-            raise ValueError("Could not initialize linear solver.")
-
-    def reinit(self) -> None:
-        raise NotImplementedError()
-
-    def __del__(self) -> None:
-        logger.debug("Freeing LinearSolver")
-        lib.SUNLinSolFree(self.c_ptr)
-        self.release_borrowed()

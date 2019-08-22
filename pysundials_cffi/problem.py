@@ -3,15 +3,15 @@ from typing_extensions import Protocol
 from .basic import DenseMatrix, SparseMatrix, BandMatrix
 
 
-T = TypeVar("T")
-Maybe = Union[NotImplemented, T]
-Matrix = Union[DenseMatrix, SparseMatrix, BandMatrix]
+#T = TypeVar("T")
+#Maybe = Union[NotImplemented, T]
+#Matrix = Union[DenseMatrix, SparseMatrix, BandMatrix]
 
 
 class OdeProblem(Protocol):
     n_states: int
     n_sensitivity: int
-
+"""
     def request_dy_func(self) -> Maybe[DyCallback]:
         ...
 
@@ -26,7 +26,6 @@ class OdeProblem(Protocol):
 
     def request_dy_dp_one_func(self) -> Maybe[DyDpOneCallback]:
         ...
-
 
 class SympyOde(OdeProblem):
     def __init__(self):
@@ -74,3 +73,4 @@ class SympyOde(OdeProblem):
 
 class JaxOde(OdeProblem):
     pass
+"""

@@ -7,7 +7,7 @@ from scipy import sparse  # type: ignore
 import numba  # type: ignore
 import numba.cffi_support  # type: ignore
 import logging
-from typing import Optional, Tuple, Union, NewType, List, Any, cast, TextIO
+from typing import Optional, Tuple, Union, NewType, List, Any, cast, TextIO, Callable
 
 from pysundials_cffi import _cvodes
 
@@ -44,10 +44,10 @@ class Borrows:
     def borrow(self, arg: Any) -> None:
         self._borrowed.append(arg)
 
-    def release_borrowed_func(self) -> None:
+    def release_borrowed_func(self) -> Callable[[], None]:
         borrowed = self._borrowed
         # Does not keep a reference to self
-        def release():
+        def release() -> None:
             print(borrowed)
             borrowed.clear()
 
@@ -147,17 +147,17 @@ def empty_matrix(
 
 
 class RefCount:
-    def __init__(self):
+    def __init__(self) -> None:
         self.count: int = 0
 
-    def borrow(self):
+    def borrow(self) -> None:
         self.count += 1
 
-    def release(self):
+    def release(self) -> None:
         assert self.count > 0
         self.count -= 1
 
-    def is_zero(self):
+    def is_zero(self) -> bool:
         assert self.count >= 0
         return self.count == 0
 
@@ -168,14 +168,14 @@ def _as_numpy(
     size: int,
     dtype: np.dtype,
     counter: Optional[RefCount] = None,
-):
+) -> np.ndarray:
     if size < 0:
-        raise ValueError('Array size must not be negative.')
+        raise ValueError("Array size must not be negative.")
 
     if size != 0:
         notnull(ptr)
 
-    def release(ptr):
+    def release(ptr: CPointer) -> None:
         nonlocal owner
         if counter is not None:
             counter.release()
@@ -198,7 +198,9 @@ class SparseMatrix(Borrows):
         self._name = name
         self.c_ptr = c_ptr
 
-        def finalize(ptr, name, release_borrowed):
+        def finalize(
+            ptr: CPointer, name: str, release_borrowed: Callable[[], None]
+        ) -> None:
             if ptr == ffi.NULL:
                 logger.error("Trying to free matrix %s, but c_ptr is NULL" % name)
             else:
@@ -300,7 +302,7 @@ class DenseMatrix(Borrows):
         self._name = name
         self.c_ptr = c_ptr
 
-        def finalize(ptr, name, release_borrowed):
+        def finalize(ptr: CPointer, name: str, release_borrowed: Callable[[], None]) -> None:
             if ptr == ffi.NULL:
                 logger.error("Trying to free matrix %s, but c_ptr is NULL" % name)
             else:
@@ -369,7 +371,7 @@ class Vector(Borrows):
         notnull(c_ptr)
         self.c_ptr = c_ptr
 
-        def finalize(ptr, name, release_borrowed):
+        def finalize(ptr: CPointer, name: str, release_borrowed: Callable[[], None]) -> None:
             if ptr == ffi.NULL:
                 logger.error("Trying to free c_ptr of vector %s but it is NULL" % name)
             else:
@@ -407,3 +409,30 @@ class Vector(Borrows):
     def data(self) -> np.ndarray:
         ptr = lib.N_VGetArrayPointer_Serial(self.c_ptr)
         return _as_numpy(self, ptr, len(self), self.dtype)
+
+
+class LinearSolver(Borrows):
+    def __init__(self, c_ptr: CPointer) -> None:
+        super().__init__()
+        notnull(c_ptr, "Linear solver cpointer is NULL.")
+
+        def finalize(c_ptr: CPointer, release_borrowed: Callable[[], None]) -> None:
+            if c_ptr == ffi.NULL:
+                logger.warn("Trying to free LinearSolver but it is NULL.")
+            else:
+                logger.debug("Freeing LinearSolver")
+                lib.SUNLinSolFree(c_ptr)
+            release_borrowed()
+        weakref.finalize(
+            self, finalize, c_ptr, self.release_borrowed_func()
+        )
+
+        self.c_ptr = c_ptr
+
+    def initialize(self) -> None:
+        ret = lib.SUNLinSolInitialize(self.c_ptr)
+        if ret != 0:
+            raise ValueError("Could not initialize linear solver.")
+
+    def reinit(self) -> None:
+        raise NotImplementedError()
