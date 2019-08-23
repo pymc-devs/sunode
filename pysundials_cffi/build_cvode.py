@@ -36,7 +36,7 @@ ffibuilder.set_source(
         "lapack",
         "pthread",
     ],
-    include_dirs=[os.environ["CONDA_PREFIX"] + "/include"],
+    include_dirs=[os.path.join(os.environ["CONDA_PREFIX"], "include")],
 )
 
 

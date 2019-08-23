@@ -5,8 +5,6 @@ jobs:
     vmImage: 'ubuntu-16.04'
   strategy:
     matrix:
-      Python36:
-        python.version: '3.6'
       Python37:
         python.version: '3.7'
 
@@ -19,21 +17,24 @@ jobs:
 
   - bash: |
       source activate myEnvironment
-      conda install --yes --quiet --name myEnvironment python=$PYTHON_VERSION numpy
+      conda install -c conda-forge --yes --quiet --name myEnvironment python=$PYTHON_VERSION numpy numba xarray scipy sundials sympy typing_extensions
+      pip install pytest pytest-azurepipelines hypothesis pytest-cov
     displayName: Install Anaconda packages
   - bash: |
       source activate myEnvironment
-      pip install pytest pytest-azurepipelines
-      pytest
+      pip install -e .
+    displayName: Install package
+  - bash: |
+      source activate myEnvironment
+      pytest --cov pysundials_cffi --cov-report html
     displayName: pytest
+
 - job:
   displayName: macOS-10.13
   pool:
     vmImage: 'macOS-10.13'
   strategy:
     matrix:
-      Python36:
-        python.version: '3.6'
       Python37:
         python.version: '3.7'
 
@@ -41,14 +42,17 @@ jobs:
   - bash: echo "##vso[task.prependpath]$CONDA/bin"
     displayName: Add conda to PATH
 
-  - bash: conda create --yes --quiet --name myEnvironment
+  - bash: conda create -c conda-forge --yes --quiet --name myEnvironment python=$PYTHON_VERSION numpy numba xarray scipy sundials sympy typing_extensions
     displayName: Create Anaconda environment
 
   - bash: |
       source activate myEnvironment
-      conda install --yes --quiet --name myEnvironment python=$PYTHON_VERSION numpy
-      pip install pytest pytest-azurepipelines
+      pip install pytest pytest-azurepipelines hypothesis
     displayName: Install Anaconda packages
+  - bash: |
+      source activate myEnvironment
+      pip install -e .
+    displayName: Install package
   - bash: |
       source activate myEnvironment
       pytest
@@ -59,8 +63,6 @@ jobs:
     vmImage: 'vs2017-win2016'
   strategy:
     matrix:
-      Python36:
-        python.version: '3.6'
       Python37:
         python.version: '3.7'
 
@@ -68,32 +70,18 @@ jobs:
   - powershell: Write-Host "##vso[task.prependpath]$env:CONDA\Scripts"
     displayName: Add conda to PATH
 
-  - script: conda create --yes --quiet --name myEnvironment
+  - script: conda create -c conda-forge --yes --quiet --name myEnvironment python=%PYTHON_VERSION% numpy numba xarray scipy sundials sympy typing_extensions
     displayName: Create Anaconda environment
 
   - script: |
       call activate myEnvironment
-      conda install --yes --quiet --name myEnvironment python=%PYTHON_VERSION% numpy
+      pip install pytest pytest-azurepipelines hypothesis
     displayName: Install Anaconda packages
   - script: |
       call activate myEnvironment
-      pip install pytest pytest-azurepipelines
-      pytest
-    displayName: pytest
-- job:
-  displayName: From environment.yml
-  pool:
-    vmImage: 'ubuntu-16.04'
-
-  steps:
-  - bash: echo "##vso[task.prependpath]$CONDA/bin"
-    displayName: Add conda to PATH
-
-  - script: conda env create --quiet --file environment.yml
-    displayName: Create Anaconda environment
-
-  - bash: |
-      source activate env-from-yaml
-      pip install pytest pytest-azurepipelines
+      pip install -e .
+    displayName: Install package and build extension
+  - script: |
+      call activate myEnvironment
       pytest
     displayName: pytest

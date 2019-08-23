@@ -9,7 +9,7 @@ setup(
     url='https://github.com/aseyboldt/pysundials_cffi',
     setup_requires=["cffi>=1.0.0"],
     cffi_modules=[
-        "pysundials_cffi/build_cvode.py:ffibuilder",
+        #"pysundials_cffi/build_cvode.py:ffibuilder",
         "pysundials_cffi/build_cvodes.py:ffibuilder",
     ],
     install_requires=[
