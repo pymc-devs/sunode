@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import sys
 import weakref
 
@@ -436,3 +437,6 @@ class LinearSolver(Borrows):
 
     def reinit(self) -> None:
         raise NotImplementedError()
+
+
+Matrix = Union[DenseMatrix, SparseMatrix]

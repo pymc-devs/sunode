@@ -1,59 +1,128 @@
+from __future__ import annotations
+
 import logging
 import pydoc
-from typing import Any, Type, Dict, cast, Set, Iterable, TypeVar
+from dataclasses import dataclass
+from typing import (
+    Any,
+    Type,
+    Dict,
+    cast,
+    Set,
+    Iterable,
+    TypeVar,
+    Optional,
+    overload,
+    Generic,
+    Union,
+)
 from typing_extensions import Protocol, Literal
 
-from pysundials_cffi.problem import OdeProblem
+from pysundials_cffi import solver, linear_solver
+from pysundials_cffi.basic import (
+    DenseMatrix,
+    SparseMatrix,
+    Vector,
+    Matrix,
+    LinearSolver,
+)
 
 
 logger = logging.getLogger("pysundials_cffi.builder")
 
 
-T = TypeVar("T", bound="Builder", contravariant=True)
+@dataclass
+class OptionData:
+    vector_backend: Optional[str] = None
+    jacobian: Optional[str] = None
+    superlu_threads: Optional[int] = None
+    klu_ordering: Optional[str] = None
 
 
-class BuilderOption(Protocol[T]):
+@dataclass
+class BuildData:
+    y_template: Optional[Vector] = None
+    jac_template: Optional[Matrix] = None
+    linear_solver: Optional[LinearSolver] = None
+
+
+T = TypeVar("T", bound="Option")
+
+
+class Option:
     def __init__(self) -> None:
-        ...
-
-    def build(self) -> None:
-        ...
+        self._builder: Optional[Builder] = None
 
     @property
     def name(self) -> str:
+        return type(self).__name__
+
+    @property
+    def builder(self) -> Builder:
+        if self._builder is None:
+            raise ValueError("Option can only be called through the Builder.")
+        return self._builder
+
+    def _take_builder(self, builder: Builder) -> None:
+        self._builder = builder
+
+    def _release_builder(self) -> None:
+        self._builder = None
+
+    @overload
+    def __get__(self: T, builder: Builder, type: Any = None) -> BoundOption[T]:
         ...
 
-    def take_builder(self, builder: T) -> None:
+    @overload
+    def __get__(self: T, builder: Any, type: Any = None) -> T:
         ...
 
-    def release_builder(self) -> None:
-        ...
+    def __get__(self: T, builder: Any, type: Any = None) -> Union[T, BoundOption[T]]:
+        if isinstance(builder, Builder):
+            return BoundOption(builder, self)
+        return self
 
 
-# TODO Sort out those type vars
-T2 = TypeVar("T2", bound="Builder", covariant=True)
+class BoundOption(Generic[T]):
+    def __init__(self, builder: Builder, option: T):
+        self._builder = builder
+        self._option = option
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Builder:
+        self._option._take_builder(self._builder)
+        try:
+            self._option(*args, **kwargs)
+        finally:
+            self._option._release_builder()
+        return self._builder._remove([self._option.name])
 
 
-class Builder:
-    _all_options: Dict[str, Type[BuilderOption[Any]]] = {}
+class DirMeta(type):
+    def __dir__(cls):
+        #return list(cls._all_options) + type.__dir__(cls)
+        return type.__dir__(cls)
+
+
+class Builder(metaclass=DirMeta):
+    _all_options: Dict[str, Type[Option]] = {}
 
     @classmethod
-    def _option(
-        cls: Type[T], option_class: Type[BuilderOption[T]]
-    ) -> Type[BuilderOption[T]]:
+    def _option(cls: Type[Builder], option_class: Type[Option]) -> Type[Option]:
         name = option_class.__name__
         cls._all_options[name] = option_class
         return option_class
 
-    def __init__(self: T) -> None:
-        self._options: Dict[str, BuilderOption[T]] = {}
+    def __init__(self) -> None:
+        self._options: Dict[str, Option] = {}
         self._required: Set[str] = set()
         self._recent: Set[str] = set()
+
+        self._add_initial_options()
 
     def _update_docstring(self) -> None:
         self.__doc__ = self._make_docstring(subset="all")
 
-    def _add(self: T2, options: Iterable[BuilderOption[T2]]) -> T2:
+    def _add(self, options: Iterable[Option]) -> Builder:
         for option in options:
             if option.name in self._options:
                 raise ValueError("Option with name %s exists." % option.name)
@@ -62,7 +131,7 @@ class Builder:
         self._update_docstring()
         return self
 
-    def _make_required(self: T2, names: Iterable[str]) -> T2:
+    def _make_required(self, names: Iterable[str]) -> Builder:
         for name in names:
             if not name in self._options:
                 raise KeyError("Unknown option: %s" % name)
@@ -70,7 +139,7 @@ class Builder:
         self._update_docstring()
         return self
 
-    def _remove(self: T2, names: Iterable[str]) -> T2:
+    def _remove(self, names: Iterable[str]) -> Builder:
         for name in names:
             if not name in self._options:
                 raise KeyError("Unknown option: %s" % name)
@@ -116,15 +185,49 @@ class Builder:
             'Invalid subset: %s. Must be one of "all" or "possible"' % subset
         )
 
-    def __getattr__(self: T2, name: str) -> BuilderOption[T2]:
-        option = self._options[name]
+    def __getattr__(self, name: str) -> Option:
+        return self._options[name]
 
-        def call(*args: Any, **kwargs: Any) -> T2:
-            option.take_builder(self)
-            try:
-                builder = option(*args, **kwargs)
-            finally:
-                option.release_builder()
-            return cast(T2, builder)._remove([option.name])
+    def __dir__(self) -> List[str]:
+        return list(self._options) + list(super(Builder, self).__dir__())
 
-        return cast(BuilderOption[T2], call)
+    def _add_initial_options(self) -> None:
+        self._build_data = BuildData()
+        self._option_data = OptionData()
+        self._add([linear_solver.klu_ordering()])
+
+    def solve(self) -> solver.Solver:
+        raise NotImplementedError()
+    
+    
+@Builder._option
+class vector_backend(Option):
+    def __call__(self, kind: str) -> None:
+        assert kind in ["serial"]
+        self.builder._option_data.vector_backend = kind
+
+    def build(self) -> None:
+        ndim = self.builder._problem.n_states
+        kind = self.builder._option_data.vector_backend
+        if kind is None:
+            kind = "serial"
+        vector = empty_vector(ndim, kind=kind)
+        self.builder._build_data.y_template = vector
+
+
+@Builder._option
+class jacobian(Option):
+    def __call__(self, kind: str) -> None:
+        """Hallo"""
+        assert kind in ["dense", "sparse"]
+        self.builder._option_data.jacobian = kind
+
+    def build(self) -> None:
+        ndim = self.builder._problem.n_states
+        kind = self.builder._option_data.jacobian
+        if kind is None:
+            kind = "dense"
+        matfunc = self.builder._problem.request_jac_func(kind)
+        if matfunc is None:
+            raise ValueError("Problem does not support jacobian")
+        self.builder._opt
