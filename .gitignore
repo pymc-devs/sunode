@@ -1,6 +1,6 @@
 __pycache__
 build
-_sundials*
+_sunode*
 include/sundials_include
 *egg-info
 .ipy*
