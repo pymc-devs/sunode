@@ -1,0 +1,32 @@
+name: Python package
+
+on: [push]
+
+jobs:
+  run: 
+    runs-on: ${{ matrix.operating-system }}
+    strategy:
+      max-parallel: 4
+      matrix:
+        operating-system: [ubuntu-latest]
+        python-version: [3.7]
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Dependences
+      run: |
+        export PATH="/usr/share/miniconda/bin:$PATH"
+        conda create -n sunode-env -q --yes -c conda-forge python=${PYVER} conda-build conda-verify coverage pytest hypothesis statsmodels
+      env:
+        PYVER: ${{ matrix.python-version }}
+    - name: Install package 
+      run: |
+        export PATH="/usr/share/miniconda/bin:$PATH"
+        source activate sunode-env
+        conda-build -c conda-forge ./conda
+        conda install --yes -c file://${CONDA_PREFIX}/conda-bld/ -c conda-forge sunode
+    - name: Test with coverage
+      run: |
+        export PATH="/usr/share/miniconda/bin:$PATH"
+        source activate sunode-env
+        python -c "import sunode"
+        coverage run -m pytest --pyargs sunode

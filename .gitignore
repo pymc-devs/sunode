@@ -1,6 +1,10 @@
 __pycache__
 build
 _sunode*
+_sundials*
+.vscode
+.pytest_cache
+.coverage
 include/sundials_include
 *egg-info
 .ipy*
