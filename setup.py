@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='sunode',
@@ -11,6 +11,7 @@ setup(
     cffi_modules=[
         "sunode/build_cvodes.py:ffibuilder",
     ],
+    packages=find_packages(),
     install_requires=[
         "cffi>=1.0.0",
         "sympy",

@@ -1,0 +1,53 @@
+{% set name = "sunode" %}
+{% set version = "0.0.1" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  path: ..
+
+build:
+  number: 0
+  script: "{{ PYTHON }} -m pip install . -vv"
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+  host:
+    - python
+    - pip
+    - numpy >=1.14
+    - libblas
+    - libcblas
+    - liblapack
+    - liblapacke
+    - cffi
+    - sundials >=5.0.0
+  run:
+    - python
+    - numpy >=1.14
+    - cffi
+    - xarray
+    - scipy
+    - sundials >=5.0.0
+    - numba
+    - typing_extensions
+    - sympy
+
+test:
+  imports:
+    - sunode
+  requires:
+    - pytest
+    - hypothesis
+    - statsmodels
+  commands:
+    - pytest --pyargs sunode
+
+about:
+  home: https://github.com/aseyboldt/sunode
+  license: Apache-2.0
+  license_family: Apache
+  summary: A wrapper around sundials cvodes

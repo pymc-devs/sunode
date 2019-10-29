@@ -5,8 +5,8 @@ from typing import Dict, Sequence, Any
 
 import numpy as np  # type: ignore
 
-from pysundials_cffi import basic
-from pysundials_cffi.builder import Option, Builder
+from sunode import basic
+from sunode.builder import Option, Builder
 
 
 @Builder._option
