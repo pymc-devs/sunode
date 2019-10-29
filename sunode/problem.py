@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Union, TypeVar, Tuple, Callable, Any
 from typing_extensions import Protocol
-from pysundials_cffi.basic import Matrix, DenseMatrix, SparseMatrix, BandMatrix
-from pysundials_cffi.builder import Option, Builder
-from pysundials_cffi import _cvodes
+from sunode.basic import Matrix, DenseMatrix, SparseMatrix, BandMatrix
+from sunode.builder import Option, Builder
+from sunode import _cvodes
 import numba  # type: ignore
 
 lib = _cvodes.lib

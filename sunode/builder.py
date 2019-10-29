@@ -18,8 +18,8 @@ from typing import (
 )
 from typing_extensions import Protocol, Literal
 
-from pysundials_cffi import solver, linear_solver
-from pysundials_cffi.basic import (
+from sunode import solver, linear_solver
+from sunode.basic import (
     DenseMatrix,
     SparseMatrix,
     Vector,
@@ -28,7 +28,7 @@ from pysundials_cffi.basic import (
 )
 
 
-logger = logging.getLogger("pysundials_cffi.builder")
+logger = logging.getLogger("sunode.builder")
 
 
 @dataclass

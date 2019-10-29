@@ -10,13 +10,13 @@ import numba.cffi_support  # type: ignore
 import logging
 from typing import Optional, Tuple, Union, NewType, List, Any, cast, TextIO, Callable
 
-from pysundials_cffi import _cvodes
+from sunode import _cvodes
 
 
 __all__ = ["from_numpy", "empty_vector", "empty_matrix"]
 
 
-logger = logging.getLogger("pysundials_cffi.basic")
+logger = logging.getLogger("sunode.basic")
 
 lib = _cvodes.lib
 ffi = _cvodes.ffi

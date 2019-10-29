@@ -5,7 +5,7 @@ from typing import Optional, Union, Any
 
 import xarray  # type: ignore
 
-from pysundials_cffi.basic import (
+from sunode.basic import (
     Vector,
     DenseMatrix,
     SparseMatrix,

@@ -6,10 +6,9 @@ typedef ... *SUNNonlinearSolver;
 
 typedef int (*SUNNonlinSolSysFn)(N_Vector y, N_Vector F, void* mem);
 
-typedef int (*SUNNonlinSolLSetupFn)(N_Vector y, N_Vector F, booleantype jbad,
-                                    booleantype* jcur, void* mem);
+typedef int (*SUNNonlinSolLSetupFn)(booleantype jbad, booleantype* jcur, void* mem);
 
-typedef int (*SUNNonlinSolLSolveFn)(N_Vector y, N_Vector b, void* mem);
+typedef int (*SUNNonlinSolLSolveFn)(N_Vector b, void* mem);
 
 typedef int (*SUNNonlinSolConvTestFn)(SUNNonlinearSolver NLS, N_Vector y,
                                       N_Vector del, realtype tol, N_Vector ewt,
@@ -48,7 +47,7 @@ int SUNNonlinSolFree(SUNNonlinearSolver NLS);
 int SUNNonlinSolSetSysFn(SUNNonlinearSolver NLS, SUNNonlinSolSysFn SysFn);
 int SUNNonlinSolSetLSetupFn(SUNNonlinearSolver NLS, SUNNonlinSolLSetupFn SetupFn);
 int SUNNonlinSolSetLSolveFn(SUNNonlinearSolver NLS, SUNNonlinSolLSolveFn SolveFn);
-int SUNNonlinSolSetConvTestFn(SUNNonlinearSolver NLS, SUNNonlinSolConvTestFn CTestFn);
+int SUNNonlinSolSetConvTestFn(SUNNonlinearSolver NLS, SUNNonlinSolConvTestFn CTestFn, void *user_data);
 int SUNNonlinSolSetMaxIters(SUNNonlinearSolver NLS, int maxiters);
 
 /* get functions */
@@ -64,11 +63,11 @@ int SUNNonlinSolGetNumConvFails(SUNNonlinearSolver NLS, long int *nconvfails);
 #define SUN_NLS_SUCCESS        0  /* successful / converged */
 
 /* Recoverable */
-#define SUN_NLS_CONTINUE       1  /* not converged, keep iterating      */
-#define SUN_NLS_CONV_RECVR     2  /* convergece failure, try to recover */
+#define SUN_NLS_CONTINUE       901  /* not converged, keep iterating      */
+#define SUN_NLS_CONV_RECVR     902  /* convergece failure, try to recover */
 
 /* Unrecoverable */
-#define SUN_NLS_MEM_NULL      -1  /* memory argument is NULL            */
-#define SUN_NLS_MEM_FAIL      -2  /* failed memory access / allocation  */
-#define SUN_NLS_ILL_INPUT     -3  /* illegal function input             */
-#define SUN_NLS_VECTOROP_ERR  -4  /* failed NVector operation           */
+#define SUN_NLS_MEM_NULL      -901  /* memory argument is NULL            */
+#define SUN_NLS_MEM_FAIL      -902  /* failed memory access / allocation  */
+#define SUN_NLS_ILL_INPUT     -903  /* illegal function input             */
+#define SUN_NLS_VECTOROP_ERR  -904  /* failed NVector operation           */

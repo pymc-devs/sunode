@@ -3,11 +3,11 @@ from __future__ import annotations
 import logging
 from typing import Optional, Tuple, List, cast
 
-from pysundials_cffi import _cvodes
-from pysundials_cffi.basic import notnull, DenseMatrix, SparseMatrix
-from pysundials_cffi.builder import Option, Builder
-from pysundials_cffi import basic
-from pysundials_cffi import solver
+from sunode import _cvodes
+from sunode.basic import notnull, DenseMatrix, SparseMatrix
+from sunode.builder import Option, Builder
+from sunode import basic
+from sunode import solver
 
 
 __all__ = ["linear_solver"]

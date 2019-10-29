@@ -6,7 +6,7 @@ from hypothesis import given
 import hypothesis.strategies as st
 import hypothesis.extra.numpy as hnp
 
-from pysundials_cffi import basic
+from sunode import basic
 
 
 VEC_TYPES = ["serial"]
