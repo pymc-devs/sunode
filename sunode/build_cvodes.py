@@ -26,21 +26,22 @@ with open(os.path.join(base, "source_cvodes.c")) as fsource:
 
 import sys
 if sys.platform == 'win32':
+    conda_path = os.environ["CONDA_PREFIX"]
     try:
-        print(os.listdir(r"C:\Miniconda\envs\myEnvironment"))
-    except e:
+        print(os.listdir(conda_path))
+    except Exception as e:
         print(e)
     try:
-        print(os.listdir(r"C:\Miniconda\envs\myEnvironment\Lib"))
-    except e:
+        print(os.listdir(os.path.join(conda_path, "Lib")))
+    except Exception as e:
         print(e)
     try:
-        print(os.listdir(r"C:\Miniconda\envs\myEnvironment\Library\include"))
-    except e:
+        print(os.listdir(os.path.join(conda_path, "Library", "include")))
+    except Exception as e:
         print(e)
     try:
-        print(os.listdir(r"C:\Miniconda\envs\myEnvironment\Library\include\sundials"))
-    except e:
+        print(os.listdir(os.path.join(conda_path, "Library", "include", "sundials")))
+    except Exception as e:
         print(e)
 
 if sys.platform == 'win32':
