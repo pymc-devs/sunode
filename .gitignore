@@ -2,6 +2,7 @@ __pycache__
 build
 _sunode*
 _sundials*
+cov_html
 .vscode
 .pytest_cache
 .coverage
