@@ -49,7 +49,6 @@ class Borrows:
         borrowed = self._borrowed
         # Does not keep a reference to self
         def release() -> None:
-            print(borrowed)
             borrowed.clear()
 
         return release
