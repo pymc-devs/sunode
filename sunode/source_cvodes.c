@@ -14,3 +14,4 @@
 #include "sunlinsol/sunlinsol_band.h"
 #include "cvodes/cvodes_ls.h"
 #include "cvodes/cvodes.h"
+#include "cvodes/cvodes_diag.h"
