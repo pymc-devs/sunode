@@ -125,7 +125,13 @@ class ParamSet:
     
     def set_changeable(self, values):
         self._array[self._idxs] = values
-    
+
+    def set_fixed(self, values):
+        all_idxs = range(len(self._array))
+        idxs = [i for i in all_idxs if i not in self._idxs]
+        assert values.shape == (len(idxs),)
+        self._array[idxs] = values
+
     @property
     def paths(self):
         return self._paths
