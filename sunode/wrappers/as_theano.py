@@ -2,6 +2,8 @@ import theano
 import theano.tensor as tt
 import copy
 
+from sunode.solver import SolverError
+
 class SolveODE(tt.Op):
     itypes = [tt.dvector]
     otypes = [tt.dmatrix, tt.dtensor3]
@@ -61,7 +63,7 @@ class SolveODEAdjoint(tt.Op):
     def perform(self, node, inputs, outputs):
         y0, params = inputs
 
-        self._solver.user_data.changeable_params[:] = params
+        self._solver.set_params_array(params)
 
         try:
             self._solver.solve_forward(self._t0, self._tvals, y0, self._y_out)
@@ -99,7 +101,6 @@ class SolveODEAdjointBackward(tt.Op):
     def perform(self, node, inputs, outputs):
         y0, params, grads = inputs
 
-        self._solver.user_data.changeable_params[:] = params
 
         # TODO We don't really need to do the forward solve if we make sure
         # that it was executed previously, but it isn't very expensive

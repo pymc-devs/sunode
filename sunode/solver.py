@@ -1,12 +1,9 @@
 import numpy as np
 import sunode
-import sympy as sym
 import numba
 import dataclasses
-import theano
-import theano.tensor as tt
 
-from nitrogene.common.better_lambdify import lambdify_consts
+from sunode.symode.lambdify import lambdify_consts
 
 
 ffi = sunode._cvodes.ffi
@@ -31,46 +28,43 @@ def check(retcode):
 
 
 class Solver:
-    def __init__(self, n_vars, rhs, tvals, user_data, *,
-                 compute_sens=False, n_params=None, sens_rhs=None, abstol=1e-8, reltol=1e-7,
+    def __init__(self, problem, *,
+                 compute_sens=False, abstol=1e-12, reltol=1e-12,
                  sens_mode=None, scaling_factors=None, constraints=None):
-        self.n_vars = n_vars
-        self.n_params = n_params
-        self.tvals = tvals
-        self._user_data = user_data.copy()
-        self._state_buffer = sunode.empty_vector(self.n_vars)
+        self._problem = problem
+        self._user_data = problem.make_user_data()
+
+        n_states = self._problem.n_states
+        n_params = self._problem.n_params
+
+        self._state_buffer = sunode.empty_vector(n_states)
         self._state_buffer.data[:] = 0
-        self._jac = check(lib.SUNDenseMatrix(self.n_vars, self.n_vars))
+        self._jac = check(lib.SUNDenseMatrix(n_states, n_states))
         self._constraints = constraints
 
         self._ode = check(lib.CVodeCreate(lib.CV_BDF))
+        rhs = problem.make_sundials_rhs()
         check(lib.CVodeInit(self._ode, rhs.cffi, 0., self._state_buffer.c_ptr))
 
         self._set_tolerances(abstol, reltol)
         if self._constraints is not None:
-            assert constraints.shape == (n_vars,)
+            assert constraints.shape == (n_states,)
             self._constraints_vec = sunode.from_numpy(constraints)
             check(lib.CVodeSetConstraints(self._ode, self._constraints_vec.c_ptr))
 
         self._make_linsol()
-        self._set_user_data(self._user_data)
+
+        user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(self._user_data.data)))
+        check(lib.CVodeSetUserData(self._ode, user_data_p))
+
         self._compute_sens = compute_sens
         if compute_sens:
-            if sens_rhs is None or n_params is None:
-                raise ValueError('Missing sens_rhs or n_params.')
+            sens_rhs = self._problem.make_sundials_
             self._init_sens(sens_rhs, sens_mode)
-
-    @property
-    def user_data(self):
-        return self._user_data
 
     def _make_linsol(self):
         linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
         check(lib.CVodeSetLinearSolver(self._ode, linsolver, self._jac))
-
-    def _set_user_data(self, user_data):
-        user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(user_data.data)))
-        check(lib.CVodeSetUserData(self._ode, user_data_p))
 
     def _init_sens(self, sens_rhs, sens_mode, scaling_factors=None):
         if sens_mode == 'simultaneous':
@@ -126,11 +120,26 @@ class Solver:
         self._rtol = rtol
 
     def make_output_buffers(self, tvals):
-        y_vals = np.zeros((len(tvals), self.n_vars))
+        n_states = self._problem.n_states
+        n_params = self._problem.n_params
+        y_vals = np.zeros((len(tvals), n_states))
         if self._compute_sens:
-            sens_vals = np.zeros((len(tvals), self.n_params, self.n_vars))
+            sens_vals = np.zeros((len(tvals), n_params, n_states))
             return y_vals, sens_vals
         return y_vals
+
+    def as_xarray(self, tvals, out, sens_out=None, unstack_state=True, unstack_params=True):
+        return self._problem.solution_to_xarray(
+            tvals, out, self._user_data,
+            sensitivity=sens_out,
+            unstack_state=unstack_state, unstack_params=unstack_params
+        )
+
+    def set_params_array(self, params):
+        self._problem.update_changeable(self._user_data, params)
+
+    def get_params_array(self, out=None):
+        return self._problem.extract_changeable(self._user_data, out=out)
 
     def solve(self, t0, tvals, y0, y_out, *, sens0=None, sens_out=None):
         if self._compute_sens and (sens0 is None or sens_out is None):
@@ -182,21 +191,24 @@ class Solver:
 
 
 class AdjointSolver:
-    def __init__(self, n_vars, rhs, adj_rhs, quad_rhs, tvals, user_data, *,
-                 compute_sens=False, n_params=None, sens_rhs=None, abstol=1e-12, reltol=1e-12,
-                 sens_mode=None, scaling_factors=None, checkpoint_n=200, interpolation='polynomial',
-                 constraints=None):
-        self.n_vars = n_vars
-        self.n_params = n_params
-        self.tvals = tvals
-        self._user_data = user_data.copy()
-        self._state_buffer = sunode.empty_vector(self.n_vars)
+    def __init__(self, problem, *,
+                 abstol=1e-12, reltol=1e-12,
+                 checkpoint_n=200, interpolation='polynomial', constraints=None):
+        self._problem = problem
+
+        n_states, n_params = problem.n_states, problem.n_params
+        self._user_data = problem.make_user_data()
+
+        self._state_buffer = sunode.empty_vector(n_states)
         self._state_buffer.data[:] = 0
-        self._jac = check(lib.SUNDenseMatrix(self.n_vars, self.n_vars))
-        self._jacB = check(lib.SUNDenseMatrix(self.n_vars, self.n_vars))
-        self._adj_rhs = adj_rhs
-        self._quad_rhs = quad_rhs
-        self._rhs = rhs
+
+        self._jac = check(lib.SUNDenseMatrix(n_states, n_states))
+        self._jacB = check(lib.SUNDenseMatrix(n_states, n_states))
+
+        rhs = problem.make_sundials_rhs()
+        self._adj_rhs = problem.make_sundials_adjoint_rhs()
+        self._quad_rhs = problem.make_sundials_adjoint_quad_rhs()
+        self._rhs = problem.make_rhs()
         self._constraints = constraints
 
         self._ode = check(lib.CVodeCreate(lib.CV_BDF))
@@ -204,11 +216,14 @@ class AdjointSolver:
 
         self._set_tolerances(abstol, reltol)
         if self._constraints is not None:
-            assert constraints.shape == (n_vars,)
+            assert constraints.shape == (n_states,)
             self._constraints_vec = sunode.from_numpy(constraints)
             check(lib.CVodeSetConstraints(self._ode, self._constraints_vec.c_ptr))
+
         self._make_linsol()
-        self._set_user_data(self._user_data)
+
+        user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(self._user_data.data)))
+        check(lib.CVodeSetUserData(self._ode, user_data_p))
 
         if interpolation == 'polynomial':
             interpolation = lib.CV_POLYNOMIAL
@@ -218,10 +233,6 @@ class AdjointSolver:
             assert False
         self._init_backward(checkpoint_n, interpolation)
 
-    @property
-    def user_data(self):
-        return self._user_data
-
     def _init_backward(self, checkpoint_n, interpolation):
         check(lib.CVodeAdjInit(self._ode, checkpoint_n, interpolation))
 
@@ -230,7 +241,7 @@ class AdjointSolver:
         check(lib.CVodeCreateB(self._ode, lib.CV_BDF, backward_ode))
         self._odeB = backward_ode[0]
 
-        self._state_bufferB = sunode.empty_vector(self.n_vars)
+        self._state_bufferB = sunode.empty_vector(self._problem.n_states)
         check(lib.CVodeInitB(self._ode, self._odeB, self._adj_rhs.cffi, 0., self._state_bufferB.c_ptr))
 
         # TODO
@@ -242,8 +253,8 @@ class AdjointSolver:
         user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(self._user_data.data)))
         check(lib.CVodeSetUserDataB(self._ode, self._odeB, user_data_p))
 
-        self._quad_buffer = sunode.from_numpy(np.zeros(self.n_params))
-        self._quad_buffer_out = sunode.from_numpy(np.zeros(self.n_params))
+        self._quad_buffer = sunode.from_numpy(np.zeros(self._problem.n_params))
+        self._quad_buffer_out = sunode.from_numpy(np.zeros(self._problem.n_params))
         check(lib.CVodeQuadInitB(self._ode, self._odeB, self._quad_rhs.cffi, self._quad_buffer.c_ptr))
 
         check(lib.CVodeQuadSStolerancesB(self._ode, self._odeB, 1e-12, 1e-12))
@@ -252,10 +263,6 @@ class AdjointSolver:
     def _make_linsol(self):
         linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
         check(lib.CVodeSetLinearSolver(self._ode, linsolver, self._jac))
-
-    def _set_user_data(self, user_data):
-        user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(user_data.data)))
-        check(lib.CVodeSetUserData(self._ode, user_data_p))
 
     def _set_tolerances(self, atol=None, rtol=None):
         atol = np.array(atol)
@@ -271,10 +278,23 @@ class AdjointSolver:
         self._rtol = rtol
 
     def make_output_buffers(self, tvals):
-        y_vals = np.zeros((len(tvals), self.n_vars))
-        grad_out = np.zeros(self.n_params)
-        lamda_out = np.zeros(self.n_vars)
+        y_vals = np.zeros((len(tvals), self._problem.n_states))
+        grad_out = np.zeros(self._problem.n_params)
+        lamda_out = np.zeros(self._problem.n_states)
         return y_vals, grad_out, lamda_out
+
+    def as_xarray(self, tvals, out, sens_out=None, unstack_state=True, unstack_params=True):
+        return self._problem.solution_to_xarray(
+            tvals, out, self._user_data,
+            sensitivity=sens_out,
+            unstack_state=unstack_state, unstack_params=unstack_params
+        )
+
+    def set_params_array(self, params):
+        self._problem.update_changeable(self._user_data, params)
+
+    def get_params_array(self, out=None):
+        return self._problem.extract_changeable(self._user_data, out=out)
 
     def solve_forward(self, t0, tvals, y0, y_out):
         CVodeReInit = lib.CVodeReInit
@@ -360,7 +380,6 @@ class AdjointSolver:
 
         retval = TOO_MUCH_WORK
         while t > tend and retval == TOO_MUCH_WORK:
-            assert False
             retval = CVodeB(ode, tend, lib.CV_NORMAL)
             if retval != TOO_MUCH_WORK and retval != 0:
                 raise SolverError("Bad sundials return code while solving ode: %s (%s)"
