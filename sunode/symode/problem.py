@@ -52,13 +52,15 @@ class SympyOde(problem.Ode):
         self._sym_dydt_jac = self._sym_dydt.jacobian(self._sym_statevec)
         self._sym_dydp = self._sym_dydt.jacobian(self._sym_changeable)
         jacprotsens = (self._sym_dydt_jac * self._sym_sens.T.as_explicit()).as_explicit()
-        #self._sym_rhs_sens = (jacprotsens + self._sym_dydp).as_explicit()
+        self._sym_rhs_sens = (jacprotsens + self._sym_dydp).as_explicit().T
         self._sym_dlamdadt = (-self._sym_lamda.as_explicit() * self._sym_dydt_jac).as_explicit()
         self._quad_rhs = (self._sym_lamda.as_explicit() * self._sym_dydp).as_explicit()
 
         self.user_data_type = np.dtype([
-            ('fixed_params', (np.float64, len(paramset.fixed_array())),),
-            ('changeable_params', (np.float64, len(paramset.changeable_array())),),
+            ('fixed_params', (np.float64, len(paramset.fixed_array()))),
+            ('changeable_params', (np.float64, self.n_params)),
+            ('tmp_nparams_nstates', np.float64, (self.n_params, self.n_states)),
+            ('tmp2_nparams_nstates', np.float64, (self.n_params, self.n_states)),
         ])
 
     def make_user_data(self):
@@ -177,3 +179,48 @@ class SympyOde(problem.Ode):
             )
 
         return quad_rhs
+
+    def make_sensitivity_rhs(self, *, debug=False):
+        sens_pre, sens_calc = lambdify_consts(
+            "_sens",
+            const_args=[],
+            var_args=[
+                self._sym_time,
+                self._sym_statevec,
+                self._sym_sens,
+                self._sym_fixed,
+                self._sym_changeable
+            ],
+            expr=self._sym_rhs_sens,
+            debug=debug,
+        )
+
+        n_params = self.n_params
+
+        @numba.njit(inline='always')
+        def wrapper(out, t, y, yS, user_data):
+            fixed = user_data.fixed_params
+            changeable = user_data.changeable_params
+
+            out_array = user_data.tmp_nparams_nstates
+            yS_array = user_data.tmp2_nparams_nstates
+            for i in range(n_params):
+                yS_array[i, :] = yS[i]
+
+            pre = sens_pre()
+            sens_calc(
+                out_array,
+                pre,
+                t,
+                y.reshape((1, -1)),
+                yS_array,
+                fixed.reshape((1, -1)),
+                changeable.reshape((1, -1)),
+            )
+
+            for i in range(n_params):
+                out[i][:] = out_array[i, :]
+
+            return 0
+
+        return wrapper

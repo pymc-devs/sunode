@@ -59,7 +59,7 @@ class Solver:
 
         self._compute_sens = compute_sens
         if compute_sens:
-            sens_rhs = self._problem.make_sundials_
+            sens_rhs = self._problem.make_sundials_sensitivity_rhs()
             self._init_sens(sens_rhs, sens_mode)
 
     def _make_linsol(self):
@@ -78,17 +78,18 @@ class Solver:
 
         self._sens_mode = sens_mode
 
-        yS = check(lib.N_VCloneVectorArray(self.n_params, self._state_buffer.c_ptr))
-        vecs = [sunode.basic.Vector(yS[i]) for i in range(self.n_params)]
+        n_params = self._problem.n_params
+        yS = check(lib.N_VCloneVectorArray(n_params, self._state_buffer.c_ptr))
+        vecs = [sunode.basic.Vector(yS[i]) for i in range(n_params)]
         for vec in vecs:
             vec.data[:] = 0
         self._sens_buffer_array = yS
         self._sens_buffers = vecs
 
-        check(lib.CVodeSensInit(self._ode, self.n_params, sens_mode, sens_rhs.cffi, yS))
+        check(lib.CVodeSensInit(self._ode, n_params, sens_mode, sens_rhs.cffi, yS))
 
         if scaling_factors is not None:
-            if scaling_factors.shape != (self.n_params,):
+            if scaling_factors.shape != (n_params,):
                 raise ValueError('Invalid shape of scaling_factors.')
             self._scaling_factors = scaling_factors
             NULL_D = ffi.cast('double *', 0)
@@ -151,13 +152,15 @@ class Solver:
         ode = self._ode
         TOO_MUCH_WORK = lib.CV_TOO_MUCH_WORK
 
+        n_params = self._problem.n_params
+
         state_data = self._state_buffer.data
         state_c_ptr = self._state_buffer.c_ptr
 
         if self._compute_sens:
             sens_buffer_array = self._sens_buffer_array
             sens_data = tuple(buffer.data for buffer in self._sens_buffers)
-            for i in range(self.n_params):
+            for i in range(n_params):
                 sens_data[i][:] = sens0[i, :]
 
         state_data[:] = y0
@@ -182,11 +185,11 @@ class Solver:
                 if retval != TOO_MUCH_WORK and retval != 0:
                     raise SolverError("Bad sundials return code while solving ode: %s (%s)"
                                       % (ERROR_CODES[retval], retval))
-            y_out[i, :] = self._state_buffer.data
+            y_out[i, :] = state_data
 
             if self._compute_sens:
                 check(CVodeGetSens(ode, time_p, sens_buffer_array))
-                for j in range(self.n_params):
+                for j in range(n_params):
                     sens_out[i, j, :] = sens_data[j]
 
 

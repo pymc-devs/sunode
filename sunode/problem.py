@@ -211,7 +211,7 @@ class Ode(Protocol):
 
     def make_sundials_sensitivity_rhs(self):
         sens_rhs = self.make_sensitivity_rhs()
-        user_dtype = self._user_data_type
+        user_dtype = self.user_data_type
 
         N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
         N_VGetLength_Serial = lib.N_VGetLength_Serial
@@ -232,27 +232,23 @@ class Ode(Protocol):
 
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
 
-            tmp_sens_rhs = user_data.tmp_nparams_nvars
-            tmp_sens_yS = user_data.tmp2_nparams_nvars
-
-            
+            yS = []
+            out = []
             for i in range(n_params):
                 yS_i_ptr = N_VGetArrayPointer_Serial(yS_[i])
                 yS_i = numba.carray(yS_i_ptr, (n_vars,))
-                tmp_sens_yS[i, :] = yS_i
-
-            sens_rhs(
-                tmp_sens_rhs,
-                t,
-                y,
-                tmp_sens_yS,
-                user_data,
-            )
-
-            for i in range(n_params):
+                yS.append(yS_i)
                 out_i_ptr = N_VGetArrayPointer_Serial(out_[i])
                 out_i = numba.carray(out_i_ptr, (n_vars,))
-                out_i[:] = tmp_sens_rhs[i][:]
+                out.append(out_i)
+
+            sens_rhs(
+                out,
+                t,
+                y,
+                yS,
+                user_data,
+            )
 
             return 0
 
