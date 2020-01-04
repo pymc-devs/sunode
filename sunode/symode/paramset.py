@@ -3,9 +3,265 @@ import numpy as np
 from collections import namedtuple
 import sympy
 import dataclasses
+import pandas as pd
+
+from typing import List, Tuple, Dict
+
+
+def as_flattened(vals, base=None):
+    if base is None:
+        base = tuple()
+    out = {}
+    for name, val in vals.items():
+        if isinstance(val, dict):
+            flat = as_flattened(val, base=base + (name,))
+            out.update(flat)
+        else:
+            out[base + (name,)] = val
+    return out
+
+
+def as_nested(vals):
+    out = {}
+
+    current = {}
+    current_name = None
+    for (name, *names), val in vals.items():
+        if not names:
+            assert name not in out
+            if current_name is not None:
+                out[current_name] = as_nested(current)
+                current_name = None
+                current = {}
+            out[name] = val
+            continue
+
+        if current_name is None:
+            current_name = name
+            current = {}
+
+        if name == current_name:
+            current[tuple(names)] = val
+        else:
+            out[name] = as_nested(current)
+            current = {}
+            current_name = name
+    if current:
+        out[current_name] = as_nested(current)
+    return out
+        
+
+def count_items(dtype):
+    if dtype.fields is None:
+        prod = 1
+        for length in dtype.shape:
+            prod *= length
+        return prod
+    else:
+        num = 0
+        for dt, _ in dtype.fields.values():
+            num += count_items(dt)
+        return num
+
 
 class ParamSet:
-    def __init__(self, spec, initial_values):
+    pass
+
+
+class DTypeSubset:
+    dtype: np.dtype
+    subset_dtype: np.dtype
+    subset_view_dtype: np.dtype
+
+    coords: Dict[str, pd.Index]
+    dims: Dict[str, Tuple[str]]
+
+    paths: List[Tuple[str]]
+    subset_paths: List[Tuple[str]]
+
+    # Map each path to a slice into the combined array
+    flat_slices: Dict[Tuple[str], slice]
+    # Map each path to a slice into the array of the subset variables
+    subset_flat_slices: Dict[Tuple[str], slice]
+
+    def __init__(self, dims, subset_paths, fixed_dtype=None, coords=None, dim_basename=''):
+        if coords is None:
+            coords = {}
+        else:
+            coords = {name: pd.Index(coord) for name, coord in coords.items()}
+
+        dtype = []
+        subset_dtype = []
+        subset_view_dtype = []
+
+        paths = []
+
+        slices = {}
+        subset_slices = {}
+
+        flat_slices = {}
+        subset_flat_slices = {}
+
+        dims_out = {}
+
+        subset_names = []
+        subset_offsets = []
+        offset = 0
+        for name, val in dims.items():
+
+            if isinstance(val, dict):
+                flat_sub_paths = [p[1:] for p in subset_paths if len(p) > 0 and p[0] == name]
+                sub_subset = DTypeSubset(val, flat_sub_paths, fixed_dtype=fixed_dtype, coords=coords)
+                coords.update(sub_subset.coords)
+                dtype.append((name, sub_subset.dtype, ()))
+                if sub_subset.subset_dtype.itemsize > 0:
+                    subset_dtype.append((name, sub_subset.subset_dtype, ()))
+                    subset_view_dtype.append(sub_subset.subset_view_dtype)
+                    subset_names.append(name)
+                    subset_offsets.append(offset)
+
+                paths.extend((name,) + path for path in sub_subset.paths)
+                dims_out[name] = sub_subset.dims
+            else:
+                if fixed_dtype is None:
+                    val_dtype, val = val
+                else:
+                    val_dtype = fixed_dtype
+                if isinstance(val, (int, str)):
+                    val = (val,)
+                shape = []
+                item_dims = []
+                for i, dim in enumerate(val):
+                    if isinstance(dim, str):
+                        if dim not in coords:
+                            raise KeyError('Unknown dimension name: %s' % dim)
+                        length = len(coords[dim])
+                        dim_name = dim
+                    else:
+                        length = dim
+                        index = pd.RangeIndex(length, name='%s_%s_dim%s__' % (dim_basename, name, i))
+                        dim_name = index.name
+                        assert dim_name not in coords
+                        coords[dim_name] = index
+                    item_dims.append(dim_name)
+                    shape.append(length)
+                dims_out[name] = item_dims
+                dtype.append((name, val_dtype, tuple(shape)))
+                if (name,) in subset_paths:
+                    subset_dtype.append((name, val_dtype, tuple(shape)))
+                    subset_view_dtype.append((val_dtype, tuple(shape)))
+                    subset_offsets.append(offset)
+                    subset_names.append(name)
+                paths.append((name,))
+            offset += np.dtype([dtype[-1]]).itemsize
+        self.dtype = np.dtype(dtype)
+        self.subset_dtype = np.dtype(subset_dtype)
+        self.subset_view_dtype = np.dtype({
+            'names': subset_names,
+            'formats': subset_view_dtype,
+            'offsets': subset_offsets,
+            'itemsize': self.dtype.itemsize,
+        })
+
+        self.coords = coords
+        self.paths = paths
+        self.dims = dims_out
+        self.subset_paths = subset_paths
+
+    @property
+    def n_subset(self):
+        return count_items(self.subset_dtype)
+
+    @property
+    def n_items(self):
+        return count_items(self.dtype)
+
+    def set_from_subset(self, value_buffer, subset_buffer):
+        value_buffer.view(self.subset_dtype).fill(subset_buffer)
+
+    def as_dataclass(self, dataclass_name, flat_subset, flat_remainder, item_map=None):
+        if item_map is None:
+            item_map = lambda x: x
+
+        def _as_dataclass(dataclass_name, dtype, subset_paths, flat_subset, flat_remainder):
+            fields = []
+            
+            for name, (subdtype, _) in dtype.fields.items():
+                if subdtype.fields is None:
+                    count = count_items(subdtype)
+                    if (name,) in subset_paths:
+                        assert len(flat_subset) >= count
+                        item = item_map(flat_subset[:count].reshape(subdtype.shape))
+                        flat_subset = flat_subset[count:]
+                    else:
+                        assert len(flat_remainder) >= count
+                        item = item_map(flat_remainder[:count].reshape(subdtype.shape))
+                        flat_remainder = flat_remainder[count:]
+                else:
+                    sub_paths = [p[1:] for p in subset_paths if len(p) > 0 and p[0] == name]
+                    item, flat_subset, flat_remainder = _as_dataclass(
+                        name, subdtype, sub_paths, flat_subset, flat_remainder)
+                fields.append((name, item))
+            
+            Type = dataclasses.make_dataclass(dataclass_name, [name for name, _ in fields])
+            return Type(*[item for _, item in fields]), flat_subset, flat_remainder
+
+        params, flat_subset, flat_remainder = _as_dataclass(
+            dataclass_name, self.dtype, self.subset_paths, flat_subset, flat_remainder)
+        assert len(flat_subset) == 0
+        assert len(flat_remainder) == 0
+        return params
+
+    def from_dict(self, vals, out=None):
+        pass
+
+    def subset_from_dict(self, vals, out=None):
+        pass
+
+    def as_dict(self, vals):
+        pass
+
+    def subset_as_dict(self, vals):
+        pass
+
+    def slice_as_dataclass(self, array, array_subset, wrap_func=None):
+        pass
+
+
+"""
+class ParamSet:
+    variables
+    changeables
+    dtype
+    changeables_dtype
+    changeables_view_dtype
+    fixed_dtype
+    fixed_view_dtype
+
+    def as_dict(self, *, array=None, record=None):
+        pass
+
+    def changeable_as_dict(self, *, array=None, record=None):
+        pass
+
+    def fixed_as_dict(self, *, array=None, record=None):
+        pass
+
+
+
+    def array_from_dict(self, values, out=None):
+        pass
+
+    def record_from_dict(self, values, out=None):
+        pass
+
+
+
+
+    def __init__(self, variables, changeable_vars, fixed_dtype=None):
+        self._variables = variables
+        self._changeables = changeable_vars
+
         self._spec = spec
         self._dtype, self._idxs, self._count, self._paths, self._changeable_paths = ParamSet._parse_param_spec(spec)
         self._values = np.empty((), dtype=self._dtype)
@@ -14,7 +270,7 @@ class ParamSet:
         values = self.update_from_dict(initial_values, allow_missing=False)
     
     def __len__(self):
-        return self._count
+        return self._coun
     
     def copy(self):
         return ParamSet(self._spec, self.to_dict())
@@ -256,3 +512,4 @@ class ParamSet:
 
     def is_changeable(self, path):
         return self.slice_by_path(path).start in self._idxs
+"""

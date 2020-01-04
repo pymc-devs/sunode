@@ -4,67 +4,141 @@ import numpy as np
 import sympy as sym
 import dataclasses
 import numba
+import xarray as xr
 
 from sunode import problem
+import sunode.basic
 from sunode.symode.lambdify import lambdify_consts
+from sunode.symode.paramset import DTypeSubset
+
+
+def make_sympy_ode(params, states, rhs_sympy, *, grad_params=None):
+    paramset = Paramset(params, grad_params)
+    pass
 
 
 class SympyOde(problem.Ode):
-    def __init__(self, paramset, states, rhs_sympy):
-        self._paramset = paramset
-        self._states = states
-        self.state_type = np.dtype([
-            (name, np.float64, shape) for name, shape in states.items()
-        ])
-        self._rhs_sympy_func = rhs_sympy
-        self.all_param_type = paramset.record.dtype
+    def __init__(self, params, states, rhs_sympy, derivative_params, coords=None):
+        #self.derivative_subset = DTypeSubset(params, derivative_params, coords=coords)  # TODO allow other dtypes
+        self.derivative_subset = DTypeSubset(params, derivative_params, fixed_dtype=sunode.basic.data_dtype, coords=coords)
+        self.coords = self.derivative_subset.coords
+        self.params_dtype = self.derivative_subset.dtype
+        self.state_subset = DTypeSubset(states, [], fixed_dtype=sunode.basic.data_dtype, coords=self.coords)
+        self.state_dtype = self.state_subset.dtype
+        self.coords = self.state_subset.coords
 
-        self.n_params = len(paramset.changeable_array())
-        self.params_type = np.dtype([('params', np.float64, (self.n_params,))])
+        self._rhs_sympy_func = rhs_sympy
+
+        def check_dtype(dtype, path=None):
+            if dtype.fields is None:
+                if dtype.base != sunode.basic.data_dtype:
+                    raise ValueError('Derivative param %s has incorrect dtype %s. Should be %s'
+                                     % (path, path.base, sunode.basic.data_dtype))
+                return
+            for name, (dt, _) in dtype.fields.items():
+                if path is None:
+                    path_ = name
+                else:
+                    path_ = '.'.join(path, name)
+                check_dtype(dt, path_)
+
+        check_dtype(self.derivative_subset.subset_dtype)
 
         self._sym_time = sym.Symbol('t', real=True)
-        self._sym_params, self._sym_fixed, self._sym_changeable = paramset.as_sympy('p')
+        n_fixed = self.derivative_subset.n_items - self.n_params
+        self._sym_fixed = sym.MatrixSymbol('_sym_fixed', 1, n_fixed)
+        self._sym_deriv = sym.MatrixSymbol('_sym_deriv', 1, self.n_params)
+        fixed_items = np.array([self._sym_fixed[0, i] for i in range(n_fixed)], dtype=object)
+        deriv_items = np.array([self._sym_deriv[0, i] for i in range(self.n_params)], dtype=object)
+        self._sym_params = self.derivative_subset.as_dataclass('Params', deriv_items, fixed_items)
 
         self._sym_statevec = sym.MatrixSymbol('y', 1, self.n_states)
-        self._sym_states = dataclasses.make_dataclass('State', list(states.keys()))
-        count = 0
-        for name, shape in states.items():
-            length = np.prod(shape, dtype=int)
-            var = list(self._sym_statevec[0, count:count + length])
-            if len(shape) > 0:
-                var = sym.Array(var, shape=shape)
-            else:
-                var = var[0]
-            setattr(self._sym_states, name, var)
-            count += length
-        self._state_vars = list(states.keys())
+        state_items = np.array([self._sym_statevec[0, i] for i in range(self.n_states)], dtype=object)
+        self._sym_states = self.state_subset.as_dataclass('State', [], state_items)
 
         rhs = self._rhs_sympy_func(self._sym_time, self._sym_states, self._sym_params)
+        dims = sunode.symode.paramset.as_flattened(self.state_subset.dims)
+
+        def as_flattened(path, value, shape, dims, coords):
+            total = 1
+            for length in shape:
+                total *= length
+
+            if hasattr(value, 'shape'):
+                if value.shape != shape:
+                    raise ValueError('Invalid shape for right-hand-side state %s. It is %s but we expected %s.'
+                                     % (path, value.shape, shape))
+                if hasattr(value, 'dims') and value.dims != dims:
+                    raise ValueError('Invalid dims for right-hand-side state %s.' % path)
+
+                if isinstance(value, sym.NDimArray):
+                    return value.reshape(total)
+                elif isinstance(value, xr.DataArray):
+                    return value.data.ravel()
+                else:
+                    return value.reshape((total,))
+            elif isinstance(item, list):
+                if len(value) != shape[0]:
+                    raise ValueError('Invalued shape for right-hand-side state %s.' % path)
+                out = []
+                for val in value:
+                    out.extend(as_flattened(path, val, shape[1:], dims[1:], coords))
+                return out
+            elif isinstance(value, dict):
+                if len(value) != shape[0]:
+                    raise ValueError('Invalued shape for right-hand-side state %s.' % path)
+                out = []
+                for idx in coords[dims[0]]:
+                    out.extend(as_flattened(path, value[idx], shape[1:], dims[1:], coords))
+                return out
+            elif shape == ():
+                return [value]
+            else:
+                raise ValueError('Unknown righ-hand-side for state %s.' % path)
+
+        #rhs = sunode.symode.paramset.as_flattened(rhs)
         rhs_list = []
-        for path in self.state_type.names:
-            assert path in rhs
-            rhs_list.append(rhs[path])
+        for path in self.state_subset.paths:
+            item = rhs
+            for name in path[:-1]:
+                if name not in rhs:
+                    raise ValueError('No right-hand-side for state %s' % '.'.join(path))
+                item = item[name]
+            item = item.pop(path[-1])
+
+            item_dims = dims[path]
+            item_dtype = self.state_dtype
+            for name in path:
+                item_dtype = item_dtype[name]
+
+            name = '.'.join(path)
+            rhs_list.extend(as_flattened(name, item, item_dtype.shape, item_dims, self.coords))
+
+        rhs = sunode.symode.paramset.as_flattened(rhs)
+        if rhs:
+            keys = ['.'.join(path) for path in rhs.keys()]
+            raise ValueError('Unknown state variables: %s' % keys)
 
         self._sym_dydt = sym.Matrix(rhs_list)
         self._sym_sens = sym.MatrixSymbol('sens', self.n_params, self.n_states)
         self._sym_lamda = sym.MatrixSymbol('lamda', 1, self.n_states)
 
         self._sym_dydt_jac = self._sym_dydt.jacobian(self._sym_statevec)
-        self._sym_dydp = self._sym_dydt.jacobian(self._sym_changeable)
+        self._sym_dydp = self._sym_dydt.jacobian(self._sym_deriv)
         jacprotsens = (self._sym_dydt_jac * self._sym_sens.T.as_explicit()).as_explicit()
         self._sym_rhs_sens = (jacprotsens + self._sym_dydp).as_explicit().T
         self._sym_dlamdadt = (-self._sym_lamda.as_explicit() * self._sym_dydt_jac).as_explicit()
         self._quad_rhs = (self._sym_lamda.as_explicit() * self._sym_dydp).as_explicit()
 
-        self.user_data_type = np.dtype([
-            ('fixed_params', (np.float64, len(paramset.fixed_array()))),
+        self.user_data_dtype = np.dtype([
+            ('fixed_params', (np.float64, (n_fixed,))),
             ('changeable_params', (np.float64, self.n_params)),
             ('tmp_nparams_nstates', np.float64, (self.n_params, self.n_states)),
             ('tmp2_nparams_nstates', np.float64, (self.n_params, self.n_states)),
         ])
 
     def make_user_data(self):
-        user_data = np.recarray((), dtype=self.user_data_type)
+        user_data = np.recarray((), dtype=self.user_data_dtype)
         user_data.fixed_params[:] = self._paramset.fixed_array()
         user_data.changeable_params[:] = self._paramset.changeable_array()
         return user_data
@@ -95,7 +169,7 @@ class SympyOde(problem.Ode):
                 self._sym_time,
                 self._sym_statevec,
                 self._sym_fixed,
-                self._sym_changeable
+                self._sym_deriv,
             ],
             expr=self._sym_dydt.T,
             debug=debug,
@@ -125,7 +199,7 @@ class SympyOde(problem.Ode):
                 self._sym_statevec,
                 self._sym_lamda,
                 self._sym_fixed,
-                self._sym_changeable,
+                self._sym_deriv,
             ],
             expr=self._sym_dlamdadt,
             debug=debug,
@@ -157,7 +231,7 @@ class SympyOde(problem.Ode):
                 self._sym_statevec,
                 self._sym_lamda,
                 self._sym_fixed,
-                self._sym_changeable
+                self._sym_deriv,
             ],
             expr=self._quad_rhs,
             debug=debug,
@@ -189,7 +263,7 @@ class SympyOde(problem.Ode):
                 self._sym_statevec,
                 self._sym_sens,
                 self._sym_fixed,
-                self._sym_changeable
+                self._sym_deriv,
             ],
             expr=self._sym_rhs_sens,
             debug=debug,

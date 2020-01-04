@@ -13,10 +13,11 @@ ffi = _cvodes.ffi
 
 
 class Ode(Protocol):
-    all_params_type: np.dtype
-    params_type: np.dtype
-    user_data_type: np.dtype
-    state_type: np.dtype
+    params_dtype: np.dtype
+    derivative_subset: DTypeSubset
+    user_data_dtype: np.dtype
+    state_dtype: np.dtype
+    state_subset: DTypeSubset
     n_params: int
     n_states: int
 
@@ -47,18 +48,25 @@ class Ode(Protocol):
     def make_user_data(self):
         pass
 
-    def update_changeable(self, user_data, params):
+    def update_params(self, user_data, params: dict):
         pass
+
+    #def update_derivative_params(self, user_data, params_array: np.ndarray):
+    #    pass
 
     def extract_params(self, user_data, out=None):
         pass
 
+    def with_derivative_params(self):
+        pass
+
     @property
     def n_states(self):
-        return sum(
-            np.prod(self.state_type[name].shape, dtype=int)
-            for name in self.state_type.names
-        )
+        return self.state_subset.n_items
+
+    @property
+    def n_params(self):
+        return self.derivative_subset.n_subset
 
     def solution_to_xarray(self, tvals, solution, user_data, sensitivity=None,
                            *, unstack_state=True, unstack_params=True):

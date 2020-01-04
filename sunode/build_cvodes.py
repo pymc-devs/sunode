@@ -24,25 +24,8 @@ for fname in headers:
 with open(os.path.join(base, "source_cvodes.c")) as fsource:
     content = fsource.read()
 
-import sys
-if sys.platform == 'win32':
-    try:
-        print(os.listdir(r"C:\Miniconda\envs\myEnvironment"))
-    except e:
-        print(e)
-    try:
-        print(os.listdir(r"C:\Miniconda\envs\myEnvironment\Lib"))
-    except e:
-        print(e)
-    try:
-        print(os.listdir(r"C:\Miniconda\envs\myEnvironment\Library\include"))
-    except e:
-        print(e)
-    try:
-        print(os.listdir(r"C:\Miniconda\envs\myEnvironment\Library\include\sundials"))
-    except e:
-        print(e)
 
+import sys
 if sys.platform == 'win32':
     include = [os.path.join(os.environ["CONDA_PREFIX"], "Library", "include")]
 else:
