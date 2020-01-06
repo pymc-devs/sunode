@@ -21,6 +21,7 @@ class SympyOde(problem.Ode):
     def __init__(self, params, states, rhs_sympy, derivative_params, coords=None):
         #self.derivative_subset = DTypeSubset(params, derivative_params, coords=coords)  # TODO allow other dtypes
         self.derivative_subset = DTypeSubset(params, derivative_params, fixed_dtype=sunode.basic.data_dtype, coords=coords)
+        self.remainder_subset = self.derivative_subset.remainder()
         self.coords = self.derivative_subset.coords
         self.params_dtype = self.derivative_subset.dtype
         self.state_subset = DTypeSubset(states, [], fixed_dtype=sunode.basic.data_dtype, coords=self.coords)
@@ -39,7 +40,7 @@ class SympyOde(problem.Ode):
                 if path is None:
                     path_ = name
                 else:
-                    path_ = '.'.join(path, name)
+                    path_ = '.'.join([path, name])
                 check_dtype(dt, path_)
 
         check_dtype(self.derivative_subset.subset_dtype)
@@ -58,6 +59,7 @@ class SympyOde(problem.Ode):
 
         rhs = self._rhs_sympy_func(self._sym_time, self._sym_states, self._sym_params)
         dims = sunode.symode.paramset.as_flattened(self.state_subset.dims)
+        dims = {k: dim_names for k, (dtype, dim_names) in dims.items()}
 
         def as_flattened(path, value, shape, dims, coords):
             total = 1
@@ -77,16 +79,16 @@ class SympyOde(problem.Ode):
                     return value.data.ravel()
                 else:
                     return value.reshape((total,))
-            elif isinstance(item, list):
+            elif isinstance(value, list):
                 if len(value) != shape[0]:
-                    raise ValueError('Invalued shape for right-hand-side state %s.' % path)
+                    raise ValueError('Invalid shape for right-hand-side state %s.' % path)
                 out = []
                 for val in value:
                     out.extend(as_flattened(path, val, shape[1:], dims[1:], coords))
                 return out
             elif isinstance(value, dict):
                 if len(value) != shape[0]:
-                    raise ValueError('Invalued shape for right-hand-side state %s.' % path)
+                    raise ValueError('Invalid shape for right-hand-side state %s.' % path)
                 out = []
                 for idx in coords[dims[0]]:
                     out.extend(as_flattened(path, value[idx], shape[1:], dims[1:], coords))
@@ -139,21 +141,47 @@ class SympyOde(problem.Ode):
 
     def make_user_data(self):
         user_data = np.recarray((), dtype=self.user_data_dtype)
-        user_data.fixed_params[:] = self._paramset.fixed_array()
-        user_data.changeable_params[:] = self._paramset.changeable_array()
         return user_data
 
     def update_changeable(self, user_data, params):
+        user_data.changeable_params[:] = params.view(np.float64)
+
+    def update_params(self, user_data, params):
+        view_dtype = self.derivative_subset.subset_view_dtype
+        dtype = self.derivative_subset.subset_dtype
+        out = user_data.changeable_params.view(dtype)
+        out.fill(params.view(view_dtype))
+
+        view_dtype = self.remainder_subset.subset_view_dtype
+        dtype = self.remainder_subset.subset_dtype
+        out = user_data.fixed_params.view(dtype)
+        out.fill(params.view(view_dtype))
+
+    def update_derivative_params(self, user_data, params):
         user_data.changeable_params[:] = params
 
+    def update_remaining_params(self, user_data, params):
+        user_data.fixed_params[:] = params
+
     def extract_params(self, user_data, out=None):
-        self._paramset.set_fixed(user_data.fixed_params)
-        self._paramset.set_changeable(user_data.changeable_params)
-        params = self._paramset.record
-        if out is not None:
-            out[...] = params
-            return out
-        return params
+        if out is None:
+            out = np.full((1,), np.nan, dtype=self.params_dtype)[0]
+        (
+            out
+            .view(self.derivative_subset.subset_view_dtype)
+            .fill(
+                user_data.changeable_params.view(self.derivative_subset.subset_dtype)[0]
+            )
+        )
+        (
+            out
+            .view(self.remainder_subset.subset_view_dtype)
+            .fill(
+                user_data.fixed_params.view(self.remainder_subset.subset_dtype)[0]
+            )
+        )
+
+        return out
 
     def extract_changeable(self, user_data, out=None):
         if out is None:

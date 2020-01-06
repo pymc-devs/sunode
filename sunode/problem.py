@@ -73,7 +73,7 @@ class Ode(Protocol):
         import xarray as xr
 
         assert sensitivity is None, 'TODO'
-        solution = solution.view(self.state_type)[..., 0]
+        solution = solution.view(self.state_dtype)[..., 0]
         params = self.extract_params(user_data)
 
         def as_dict(array, prepend=None):
@@ -115,7 +115,7 @@ class Ode(Protocol):
         N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
         N_VGetLength_Serial = lib.N_VGetLength_Serial
 
-        user_dtype = self.user_data_type
+        user_dtype = self.user_data_dtype
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
         func_type = numba.cffi_support.map_type(ffi.typeof('CVRhsFn'))
@@ -137,7 +137,7 @@ class Ode(Protocol):
         return rhs_wrapper
 
     def make_sundials_adjoint_rhs(self):
-        user_dtype = self.user_data_type
+        user_dtype = self.user_data_dtype
         adj = self.make_adjoint_rhs()
 
         N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
@@ -158,10 +158,14 @@ class Ode(Protocol):
             y = numba.carray(y_ptr, (n_vars,))
 
             yB_ptr = N_VGetArrayPointer_Serial(yB_)
-            yB = numba.carray(yB_ptr, (n_vars))
+            yB = numba.carray(yB_ptr, (n_vars,))
 
             yBdot_ptr = N_VGetArrayPointer_Serial(yBdot_)
             yBdot = numba.carray(yBdot_ptr, (n_vars,))
+
+            #print(n_vars)
+            #print(N_VGetLength_Serial(yB_))
+            #print(N_VGetLength_Serial(yBdot_))
 
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
 
@@ -177,7 +181,7 @@ class Ode(Protocol):
         return adj_rhs_wrapper
 
     def make_sundials_adjoint_quad_rhs(self):
-        user_dtype = self.user_data_type
+        user_dtype = self.user_data_dtype
         adjoint_quad = self.make_adjoint_quad_rhs()
 
         N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
@@ -192,22 +196,23 @@ class Ode(Protocol):
         func_type = func_type.return_type(*args)
 
         @numba.cfunc(func_type)
-        def quad_rhs_wrapper(t, y_, yB_, yBdot_, user_data_):
-            n_vars = N_VGetLength_Serial(y_)
+        def quad_rhs_wrapper(t, y_, yB_, qBdot_, user_data_):
+            n = N_VGetLength_Serial(y_)
             y_ptr = N_VGetArrayPointer_Serial(y_)
-            y = numba.carray(y_ptr, (n_vars,))
+            y = numba.carray(y_ptr, (n,))
 
             yB_ptr = N_VGetArrayPointer_Serial(yB_)
-            n_params = N_VGetLength_Serial(yB_)
-            yB = numba.carray(yB_ptr, (n_params,))
+            n = N_VGetLength_Serial(yB_)
+            yB = numba.carray(yB_ptr, (n,))
 
-            yBdot_ptr = N_VGetArrayPointer_Serial(yBdot_)
-            yBdot = numba.carray(yBdot_ptr, (n_params,))
+            qBdot_ptr = N_VGetArrayPointer_Serial(qBdot_)
+            n = N_VGetLength_Serial(qBdot_)
+            qBdot = numba.carray(qBdot_ptr, (n,))
 
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
 
             adjoint_quad(
-                yBdot,
+                qBdot,
                 t,
                 y,
                 yB,
@@ -219,7 +224,7 @@ class Ode(Protocol):
 
     def make_sundials_sensitivity_rhs(self):
         sens_rhs = self.make_sensitivity_rhs()
-        user_dtype = self.user_data_type
+        user_dtype = self.user_data_dtype
 
         N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
         N_VGetLength_Serial = lib.N_VGetLength_Serial

@@ -145,7 +145,7 @@ class DTypeSubset:
                         coords[dim_name] = index
                     item_dims.append(dim_name)
                     shape.append(length)
-                dims_out[name] = item_dims
+                dims_out[name] = (val_dtype, item_dims)
                 dtype.append((name, val_dtype, tuple(shape)))
                 if (name,) in subset_paths:
                     subset_dtype.append((name, val_dtype, tuple(shape)))
@@ -226,6 +226,10 @@ class DTypeSubset:
 
     def slice_as_dataclass(self, array, array_subset, wrap_func=None):
         pass
+
+    def remainder(self):
+        remainder = list(set(self.paths) - set(self.subset_paths))
+        return DTypeSubset(self.dims, remainder, coords=self.coords)
 
 
 """

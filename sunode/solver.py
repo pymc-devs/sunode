@@ -14,6 +14,24 @@ ERROR_CODES = [name for name in dir(lib) if name.startswith('CV_')]
 ERROR_CODES = {getattr(lib, name): name for name in ERROR_CODES}
 
 
+def _as_dict(data):
+    if data.dtype.fields is not None:
+        return {name: _as_dict(data[name]) for name in data.dtype.fields}
+    else:
+        return data
+
+
+def _from_dict(data, vals):
+    if data.dtype.fields is not None:
+        for name, (subtype, _) in data.dtype.fields.items():
+            if subtype.fields is not None:
+                _from_dict(data[name], vals[name])
+            else:
+                data[name] = vals[name]
+    else:
+        data[...] = vals
+
+
 class SolverError(RuntimeError):
     pass
 
@@ -136,6 +154,30 @@ class Solver:
             unstack_state=unstack_state, unstack_params=unstack_params
         )
 
+    @property
+    def params_dtype(self):
+        return self._problem.params_dtype
+
+    def set_params(self, params):
+        self._problem.update_params(self._user_data, params)
+
+    def get_params(self):
+        return self._problem.extract_params(self._user_data)
+
+    def set_derivative_params(self, params):
+        self._problem.update_derivative_params(self._user_data, params)
+
+    def set_remaining_params(self, params):
+        self._problem.update_remaining_params(self._user_data, params)
+
+    def set_params_dict(self, params):
+        data = self.get_params()
+        _from_dict(data, params)
+        self.set_params(data)
+
+    def get_params_dict(self):
+        return _as_dict(self.get_params())
+
     def set_params_array(self, params):
         self._problem.update_changeable(self._user_data, params)
 
@@ -256,12 +298,12 @@ class AdjointSolver:
         user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(self._user_data.data)))
         check(lib.CVodeSetUserDataB(self._ode, self._odeB, user_data_p))
 
-        self._quad_buffer = sunode.from_numpy(np.zeros(self._problem.n_params))
-        self._quad_buffer_out = sunode.from_numpy(np.zeros(self._problem.n_params))
+        self._quad_buffer = sunode.empty_vector(self._problem.n_params)
+        self._quad_buffer_out = sunode.empty_vector(self._problem.n_params)
         check(lib.CVodeQuadInitB(self._ode, self._odeB, self._quad_rhs.cffi, self._quad_buffer.c_ptr))
 
         check(lib.CVodeQuadSStolerancesB(self._ode, self._odeB, 1e-12, 1e-12))
-        check(lib.CVodeSetQuadErrConB(self._ode, self._odeB, 1))
+        check(lib.CVodeSetQuadErrConB(self._ode, self._odeB, 0))
 
     def _make_linsol(self):
         linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
@@ -293,11 +335,29 @@ class AdjointSolver:
             unstack_state=unstack_state, unstack_params=unstack_params
         )
 
-    def set_params_array(self, params):
-        self._problem.update_changeable(self._user_data, params)
+    @property
+    def params_dtype(self):
+        return self._problem.params_dtype
 
-    def get_params_array(self, out=None):
-        return self._problem.extract_changeable(self._user_data, out=out)
+    def set_params(self, params):
+        self._problem.update_params(self._user_data, params)
+
+    def get_params(self):
+        return self._problem.extract_params(self._user_data)
+
+    def set_params_dict(self, params):
+        data = self.get_params()
+        _from_dict(data, params)
+        self.set_params(data)
+
+    def get_params_dict(self):
+        return _as_dict(self.get_params())
+
+    def set_derivative_params(self, params):
+        self._problem.update_derivative_params(self._user_data, params)
+
+    def set_remaining_params(self, params):
+        self._problem.update_remaining_params(self._user_data, params)
 
     def solve_forward(self, t0, tvals, y0, y_out):
         CVodeReInit = lib.CVodeReInit
@@ -331,7 +391,7 @@ class AdjointSolver:
                 if retval != TOO_MUCH_WORK and retval != 0:
                     raise SolverError("Bad sundials return code while solving ode: %s (%s)"
                                       % (ERROR_CODES[retval], retval))
-            y_out[i, :] = self._state_buffer.data
+            y_out[i, :] = state_data
 
     def solve_backward(self, t0, tend, tvals, grads, grad_out, lamda_out):
         CVodeReInitB = lib.CVodeReInitB
