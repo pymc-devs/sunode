@@ -238,7 +238,7 @@ class Solver:
 class AdjointSolver:
     def __init__(self, problem, *,
                  abstol=1e-12, reltol=1e-12,
-                 checkpoint_n=200, interpolation='polynomial', constraints=None):
+                 checkpoint_n=500, interpolation='polynomial', constraints=None):
         self._problem = problem
 
         n_states, n_params = problem.n_states, problem.n_params

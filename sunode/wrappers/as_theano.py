@@ -22,13 +22,14 @@ def solve_ivp(t0, y0, params, tvals, rhs, derivatives='adjoint',
                 tensor, dim_names = vals
             else:
                 try:
-                    tensor, dim_names = vals, tt.as_tensor_variable(vals.shape).eval()
+                    tensor, dim_names = vals, tt.as_tensor_variable(vals).shape.eval()
                 except theano.gof.MissingInputError as e:
                     raise ValueError(
                         'Shapes of tensors need to be statically '
                         'known or given explicitly.') from e
             if isinstance(dim_names, (str, int)):
                 dim_names = (dim_names,)
+            tensor = tt.as_tensor_variable(tensor)
             assert tensor.ndim == len(dim_names)
             assert np.dtype(tensor.dtype) == dtype, tensor
             return dim_names
@@ -81,8 +82,8 @@ def solve_ivp(t0, y0, params, tvals, rhs, derivatives='adjoint',
         return wrapper(y0_flat, params_subs_flat, params_remaining_flat), problem, sol
     elif derivatives == 'forward':
         sol = solver.Solver(problem)
-        assert False
-        wrapper = sol.SolveODE()
+        wrapper = sol.SolveODE(sol, t0, tvals)
+        return wrapper(y0_flat, params_subs_flat, params_remaining_flat)[0], problem, sol
     elif derivatives in [None, False]:
         sol = solver.Solver(problem, sens_mode=False)
         assert False
