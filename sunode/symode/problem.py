@@ -125,10 +125,10 @@ class SympyOde(problem.Ode):
         self._sym_sens = sym.MatrixSymbol('sens', self.n_params, self.n_states)
         self._sym_lamda = sym.MatrixSymbol('lamda', 1, self.n_states)
 
-        self._sym_dydt_jac = self._sym_dydt.jacobian(self._sym_statevec)
-        self._sym_dydp = self._sym_dydt.jacobian(self._sym_deriv)
-        jacprotsens = (self._sym_dydt_jac * self._sym_sens.T.as_explicit()).as_explicit()
-        self._sym_rhs_sens = (jacprotsens + self._sym_dydp).as_explicit().T
+        self._sym_dydt_jac = self._sym_dydt.jacobian(self._sym_statevec.as_explicit())
+        self._sym_dydp = self._sym_dydt.jacobian(self._sym_deriv.as_explicit())
+        #jacprotsens = (self._sym_dydt_jac * self._sym_sens.T.as_explicit()).as_explicit()
+        #self._sym_rhs_sens = (jacprotsens + self._sym_dydp).as_explicit().T
         self._sym_dlamdadt = (-self._sym_lamda.as_explicit() * self._sym_dydt_jac).as_explicit()
         self._quad_rhs = (self._sym_lamda.as_explicit() * self._sym_dydp).as_explicit()
 

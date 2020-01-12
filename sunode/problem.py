@@ -8,6 +8,8 @@ from sunode import _cvodes
 import numba  # type: ignore
 import numpy as np
 
+from sunode.symode.paramset import as_nested
+
 lib = _cvodes.lib
 ffi = _cvodes.ffi
 
@@ -108,6 +110,15 @@ class Ode(Protocol):
             data['parameters'] = params
 
         return data
+
+    def flat_solution_as_dict(self, solution):
+        slices = self.state_subset.flat_slices
+        shapes = self.state_subset.flat_shapes
+        flat_views = {}
+        for path in self.state_subset.paths:
+            shape = (-1,) + shapes[path]
+            flat_views[path] = solution[:, slices[path]].reshape(shape)
+        return as_nested(flat_views)
 
     def make_sundials_rhs(self):
         rhs = self.make_rhs()

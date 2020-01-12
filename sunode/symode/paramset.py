@@ -81,8 +81,9 @@ class DTypeSubset:
 
     # Map each path to a slice into the combined array
     flat_slices: Dict[Tuple[str], slice]
-    # Map each path to a slice into the array of the subset variables
-    subset_flat_slices: Dict[Tuple[str], slice]
+    flat_shapes: Dict[Tuple[str], slice]
+
+    item_count: int
 
     def __init__(self, dims, subset_paths, fixed_dtype=None, coords=None, dim_basename=''):
         if coords is None:
@@ -100,13 +101,14 @@ class DTypeSubset:
         subset_slices = {}
 
         flat_slices = {}
-        subset_flat_slices = {}
+        flat_shapes = {}
 
         dims_out = {}
 
         subset_names = []
         subset_offsets = []
         offset = 0
+        item_count = 0
         for name, val in dims.items():
 
             if isinstance(val, dict):
@@ -122,6 +124,16 @@ class DTypeSubset:
 
                 paths.extend((name,) + path for path in sub_subset.paths)
                 dims_out[name] = sub_subset.dims
+                for path in sub_subset.paths:
+                    full_path = (name,) + path
+                    assert full_path not in flat_slices and full_path not in flat_shapes
+                    sub_slice = sub_subset.flat_slices[path]
+                    flat_slices[full_path] = slice(
+                        sub_slice.start + item_count,
+                        sub_slice.stop + item_count,
+                    )
+                    flat_shapes[full_path] = sub_subset.flat_shapes[path]
+                item_count += sub_subset.item_count
             else:
                 if fixed_dtype is None:
                     val_dtype, val = val
@@ -153,6 +165,12 @@ class DTypeSubset:
                     subset_offsets.append(offset)
                     subset_names.append(name)
                 paths.append((name,))
+                length = 1
+                for dim_len in shape:
+                    length *= dim_len
+                flat_slices[(name,)] = slice(item_count, item_count + length)
+                flat_shapes[(name,)] = tuple(shape)
+                item_count += length
             offset += np.dtype([dtype[-1]]).itemsize
         self.dtype = np.dtype(dtype)
         self.subset_dtype = np.dtype(subset_dtype)
@@ -162,6 +180,10 @@ class DTypeSubset:
             'offsets': subset_offsets,
             'itemsize': self.dtype.itemsize,
         })
+
+        self.item_count = item_count
+        self.flat_shapes = flat_shapes
+        self.flat_slices = flat_slices
 
         self.coords = coords
         self.paths = paths

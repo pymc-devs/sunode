@@ -79,7 +79,9 @@ def solve_ivp(t0, y0, params, tvals, rhs, derivatives='adjoint',
     if derivatives == 'adjoint':
         sol = solver.AdjointSolver(problem)
         wrapper = SolveODEAdjoint(sol, t0, tvals)
-        return wrapper(y0_flat, params_subs_flat, params_remaining_flat), problem, sol
+        solution = wrapper(y0_flat, params_subs_flat, params_remaining_flat)
+        solution = problem.flat_solution_as_dict(solution)
+        return solution, problem, sol
     elif derivatives == 'forward':
         sol = solver.Solver(problem)
         wrapper = sol.SolveODE(sol, t0, tvals)
