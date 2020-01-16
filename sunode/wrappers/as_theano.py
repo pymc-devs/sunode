@@ -7,6 +7,7 @@ import numpy as np
 from sunode.solver import SolverError
 from sunode.symode.paramset import as_flattened
 from sunode import basic, symode, solver
+import sunode.symode.problem
 
 
 def solve_ivp(t0, y0, params, tvals, rhs, derivatives='adjoint',
@@ -57,7 +58,10 @@ def solve_ivp(t0, y0, params, tvals, rhs, derivatives='adjoint',
         if isinstance(tensor, tuple):
             tensor, _ = tensor
         vars.append(tt.as_tensor_variable(tensor).reshape((-1,)))
-    params_subs_flat = tt.concatenate(vars)
+    if vars:
+        params_subs_flat = tt.concatenate(vars)
+    else:
+        params_subs_flat = tt.as_tensor_variable(np.zeros(0))
 
     vars = []
     for path in problem.remainder_subset.subset_paths:
@@ -65,7 +69,10 @@ def solve_ivp(t0, y0, params, tvals, rhs, derivatives='adjoint',
         if isinstance(tensor, tuple):
             tensor, _ = tensor
         vars.append(tt.as_tensor_variable(tensor).reshape((-1,)))
-    params_remaining_flat = tt.concatenate(vars)
+    if vars:
+        params_remaining_flat = tt.concatenate(vars)
+    else:
+        params_remaining_flat = tt.as_tensor_variable(np.zeros(0))
 
     flat_tensors = as_flattened(y0)
     vars = []
