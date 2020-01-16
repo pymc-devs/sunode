@@ -47,7 +47,7 @@ def check(retcode):
 
 class Solver:
     def __init__(self, problem, *,
-                 compute_sens=False, abstol=1e-12, reltol=1e-12,
+                 compute_sens=False, abstol=1e-10, reltol=1e-10,
                  sens_mode=None, scaling_factors=None, constraints=None):
         self._problem = problem
         self._user_data = problem.make_user_data()
@@ -237,7 +237,7 @@ class Solver:
 
 class AdjointSolver:
     def __init__(self, problem, *,
-                 abstol=1e-12, reltol=1e-12,
+                 abstol=1e-10, reltol=1e-10,
                  checkpoint_n=500, interpolation='polynomial', constraints=None):
         self._problem = problem
 
@@ -290,7 +290,7 @@ class AdjointSolver:
         check(lib.CVodeInitB(self._ode, self._odeB, self._adj_rhs.cffi, 0., self._state_bufferB.c_ptr))
 
         # TODO
-        check(lib.CVodeSStolerancesB(self._ode, self._odeB, 1e-12, 1e-12))
+        check(lib.CVodeSStolerancesB(self._ode, self._odeB, 1e-10, 1e-10))
 
         linsolver = check(lib.SUNLinSol_Dense(self._state_bufferB.c_ptr, self._jacB))
         check(lib.CVodeSetLinearSolverB(self._ode, self._odeB, linsolver, self._jacB))
@@ -302,7 +302,7 @@ class AdjointSolver:
         self._quad_buffer_out = sunode.empty_vector(self._problem.n_params)
         check(lib.CVodeQuadInitB(self._ode, self._odeB, self._quad_rhs.cffi, self._quad_buffer.c_ptr))
 
-        check(lib.CVodeQuadSStolerancesB(self._ode, self._odeB, 1e-12, 1e-12))
+        check(lib.CVodeQuadSStolerancesB(self._ode, self._odeB, 1e-10, 1e-10))
         check(lib.CVodeSetQuadErrConB(self._ode, self._odeB, 0))
 
     def _make_linsol(self):
