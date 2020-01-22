@@ -188,7 +188,9 @@ class DTypeSubset:
         self.coords = coords
         self.paths = paths
         self.dims = dims_out
-        self.subset_paths = subset_paths
+
+        # Make sure the order of subset_paths is correct
+        self.subset_paths = [path for path in paths if path in subset_paths]
 
     @property
     def n_subset(self):
