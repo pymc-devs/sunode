@@ -24,32 +24,14 @@ def as_flattened(vals, base=None):
 def as_nested(vals):
     out = {}
 
-    current = {}
-    current_name = None
-    for (name, *names), val in vals.items():
-        if not names:
-            assert name not in out
-            if current_name is not None:
-                out[current_name] = as_nested(current)
-                current_name = None
-                current = {}
-            out[name] = val
-            continue
-
-        if current_name is None:
-            current_name = name
-            current = {}
-
-        if name == current_name:
-            current[tuple(names)] = val
-        else:
-            out[name] = as_nested(current)
-            current = {}
-            current_name = name
-    if current:
-        out[current_name] = as_nested(current)
+    for names, val in vals.items():
+        assert len(names) >= 1
+        current = out
+        for name in names[:-1]:
+            current = current.setdefault(name, {})
+        current[names[-1]] = val
     return out
-        
+
 
 def count_items(dtype):
     if dtype.fields is None:
