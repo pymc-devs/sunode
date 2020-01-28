@@ -126,6 +126,7 @@ class Ode(Protocol):
         N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
         N_VGetLength_Serial = lib.N_VGetLength_Serial
 
+        state_dtype = self.state_dtype
         user_dtype = self.user_data_dtype
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
@@ -137,7 +138,7 @@ class Ode(Protocol):
             y_ptr = N_VGetArrayPointer_Serial(y_)
             n_vars = N_VGetLength_Serial(y_)
             out_ptr = N_VGetArrayPointer_Serial(out_)
-            y = numba.carray(y_ptr, (n_vars,))
+            y = numba.carray(y_ptr, (n_vars,)).view(state_dtype)[0]
             out = numba.carray(out_ptr, (n_vars,))
 
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
@@ -154,6 +155,7 @@ class Ode(Protocol):
         N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
         N_VGetLength_Serial = lib.N_VGetLength_Serial
 
+        state_dtype = self.state_dtype
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
 
@@ -166,7 +168,7 @@ class Ode(Protocol):
         def adj_rhs_wrapper(t, y_, yB_, yBdot_, user_data_):
             n_vars = N_VGetLength_Serial(y_)
             y_ptr = N_VGetArrayPointer_Serial(y_)
-            y = numba.carray(y_ptr, (n_vars,))
+            y = numba.carray(y_ptr, (n_vars,)).view(state_dtype)[0]
 
             yB_ptr = N_VGetArrayPointer_Serial(yB_)
             yB = numba.carray(yB_ptr, (n_vars,))
@@ -198,6 +200,7 @@ class Ode(Protocol):
         N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
         N_VGetLength_Serial = lib.N_VGetLength_Serial
 
+        state_dtype = self.state_dtype
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
 
@@ -210,7 +213,7 @@ class Ode(Protocol):
         def quad_rhs_wrapper(t, y_, yB_, qBdot_, user_data_):
             n = N_VGetLength_Serial(y_)
             y_ptr = N_VGetArrayPointer_Serial(y_)
-            y = numba.carray(y_ptr, (n,))
+            y = numba.carray(y_ptr, (n,)).view(state_dtype)[0]
 
             yB_ptr = N_VGetArrayPointer_Serial(yB_)
             n = N_VGetLength_Serial(yB_)
@@ -277,3 +280,77 @@ class Ode(Protocol):
             return 0
 
         return sens_rhs_wrapper
+
+    def make_sundials_adjoint_jac_dense(self):
+        jac_dense = self.make_adjoint_jac_dense()
+        user_dtype = self.user_data_dtype
+        state_dtype = self.state_dtype
+
+        N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
+        N_VGetLength_Serial = lib.N_VGetLength_Serial
+        SUNDenseMatrix_Data = lib.SUNDenseMatrix_Data
+
+        user_ndtype = numba.from_dtype(user_dtype)
+        user_ndtype_p = numba.types.CPointer(user_ndtype)
+
+        func_type = numba.cffi_support.map_type(ffi.typeof('CVLsJacFnB'))
+        args = list(func_type.args)
+        args[5] = user_ndtype_p
+        func_type = func_type.return_type(*args)
+
+        @numba.cfunc(func_type)
+        def jac_dense_wrapper(t, y_, yB_, fyB_, out_, user_data_, tmp1_, tmp2_, tmp3_):
+            n_vars = N_VGetLength_Serial(y_)
+            n_lamda = N_VGetLength_Serial(yB_)
+
+            y_ptr = N_VGetArrayPointer_Serial(y_)
+            yB_ptr = N_VGetArrayPointer_Serial(yB_)
+            fyB_ptr = N_VGetArrayPointer_Serial(fyB_)
+            out_ptr = SUNDenseMatrix_Data(out_)
+
+            y = numba.carray(y_ptr, (n_vars,)).view(state_dtype)[0]
+            yB = numba.carray(yB_ptr, (n_lamda,))
+            fyB = numba.carray(fyB_ptr, (n_lamda,))
+            out = numba.farray(out_ptr, (n_lamda, n_lamda))
+
+            user_data = numba.carray(user_data_, (1,), user_dtype)[0]
+            
+            jac_dense(out, t, y, yB, fyB, user_data)
+
+            return 0
+
+        return jac_dense_wrapper
+
+    def make_sundials_jac_dense(self):
+        jac_dense = self.make_jac_dense()
+        user_dtype = self.user_data_dtype
+        state_dtype = self.state_dtype
+
+        N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
+        N_VGetLength_Serial = lib.N_VGetLength_Serial
+        SUNDenseMatrix_Data = lib.SUNDenseMatrix_Data
+
+        user_ndtype = numba.from_dtype(user_dtype)
+        user_ndtype_p = numba.types.CPointer(user_ndtype)
+
+        func_type = numba.cffi_support.map_type(ffi.typeof('CVLsJacFn'))
+        args = list(func_type.args)
+        args[4] = user_ndtype_p
+        func_type = func_type.return_type(*args)
+
+        @numba.cfunc(func_type)
+        def jac_dense_wrapper(t, y_, fy_, out_, user_data_, tmp1_, tmp2_, tmp3_):
+            n_vars = N_VGetLength_Serial(y_)
+            y_ptr = N_VGetArrayPointer_Serial(y_)
+            out_ptr = SUNDenseMatrix_Data(out_)
+            fy_ptr = N_VGetArrayPointer_Serial(fy_)
+            y = numba.carray(y_ptr, (n_vars,)).view(state_dtype)[0]
+            out = numba.farray(out_ptr, (n_vars, n_vars))
+            fy = numba.carray(fy_ptr, (n_vars,))
+            user_data = numba.carray(user_data_, (1,), user_dtype)[0]
+            
+            jac_dense(out, t, y, fy, user_data)
+
+            return 0
+
+        return jac_dense_wrapper

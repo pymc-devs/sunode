@@ -11,9 +11,12 @@ import sunode.symode.problem
 
 
 def solve_ivp(t0, y0, params, tvals, rhs, derivatives='adjoint',
-              coords=None, make_solver=None, derivative_subset=None):
+              coords=None, make_solver=None, derivative_subset=None,
+              solver_kwargs=None):
 
     dtype = basic.data_dtype
+    if solver_kwargs is None:
+        solver_kwargs={}
 
     def read_dict(vals):
         if isinstance(vals, dict):
@@ -84,11 +87,11 @@ def solve_ivp(t0, y0, params, tvals, rhs, derivatives='adjoint',
     y0_flat = tt.concatenate(vars)
 
     if derivatives == 'adjoint':
-        sol = solver.AdjointSolver(problem)
+        sol = solver.AdjointSolver(problem, **solver_kwargs)
         wrapper = SolveODEAdjoint(sol, t0, tvals)
-        solution = wrapper(y0_flat, params_subs_flat, params_remaining_flat)
-        solution = problem.flat_solution_as_dict(solution)
-        return solution, problem, sol
+        flat_solution = wrapper(y0_flat, params_subs_flat, params_remaining_flat)
+        solution = problem.flat_solution_as_dict(flat_solution)
+        return solution, flat_solution, problem, sol, y0_flat, params_subs_flat
     elif derivatives == 'forward':
         sol = solver.Solver(problem)
         wrapper = sol.SolveODE(sol, t0, tvals)
@@ -111,12 +114,14 @@ class SolveODE(tt.Op):
         self._tvals = tvals
         self._solver_id = id(solver)
         self._tvals_id = id(self._tvals)
+        self._deriv_dtype = self._solver.derivative_params_dtype
+        self._fixed_dtype = self._solver.remainder_params_dtype
 
     def perform(self, node, inputs, outputs):
         y0, params, params_fixed = inputs
 
-        self._solver.set_derivative_params(params)
-        self._solver.set_remaining_params(params_fixed)
+        self._solver.set_derivative_params(params.view(self._deriv_dtype)[0])
+        self._solver.set_remaining_params(params_fixed.view(self._fixed_dtype)[0])
         self._solver.solve(self._t0, self._tvals, y0, self._y_out,
                            sens0=sens0, sens_out=self._sens_out)
         outputs[0][0] = self._y_out
@@ -144,12 +149,14 @@ class SolveODEAdjoint(tt.Op):
         self._tvals = tvals
         self._solver_id = id(solver)
         self._tvals_id = id(self._tvals)
+        self._deriv_dtype = self._solver.derivative_params_dtype
+        self._fixed_dtype = self._solver.remainder_params_dtype
 
     def perform(self, node, inputs, outputs):
         y0, params, params_fixed = inputs
 
-        self._solver.set_derivative_params(params)
-        self._solver.set_remaining_params(params_fixed)
+        self._solver.set_derivative_params(params.view(self._deriv_dtype)[0])
+        self._solver.set_remaining_params(params_fixed.view(self._fixed_dtype)[0])
 
         try:
             self._solver.solve_forward(self._t0, self._tvals, y0, self._y_out)
@@ -183,12 +190,14 @@ class SolveODEAdjointBackward(tt.Op):
         self._tvals = tvals
         self._solver_id = id(solver)
         self._tvals_id = id(self._tvals)
+        self._deriv_dtype = self._solver.derivative_params_dtype
+        self._fixed_dtype = self._solver.remainder_params_dtype
 
     def perform(self, node, inputs, outputs):
         y0, params, params_fixed, grads = inputs
 
-        self._solver.set_derivative_params(params)
-        self._solver.set_remaining_params(params_fixed)
+        self._solver.set_derivative_params(params.view(self._deriv_dtype)[0])
+        self._solver.set_remaining_params(params_fixed.view(self._fixed_dtype)[0])
 
         # TODO We don't really need to do the forward solve if we make sure
         # that it was executed previously, but it isn't very expensive

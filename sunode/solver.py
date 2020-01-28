@@ -84,6 +84,9 @@ class Solver:
         linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
         check(lib.CVodeSetLinearSolver(self._ode, linsolver, self._jac))
 
+        self._jac_func = self._problem.make_sundials_jac_dense()
+        check(lib.CVodeSetJacFn(self._ode, self._jac_func.cffi))
+
     def _init_sens(self, sens_rhs, sens_mode, scaling_factors=None):
         if sens_mode == 'simultaneous':
             sens_mode = lib.CV_SIMULTANEOUS
@@ -157,6 +160,14 @@ class Solver:
     @property
     def params_dtype(self):
         return self._problem.params_dtype
+
+    @property
+    def derivative_params_dtype(self):
+        return self._problem.derivative_subset.subset_dtype
+
+    @property
+    def remainder_params_dtype(self):
+        return self._problem.remainder_subset.subset_dtype
 
     def set_params(self, params):
         self._problem.update_params(self._user_data, params)
@@ -295,6 +306,9 @@ class AdjointSolver:
         linsolver = check(lib.SUNLinSol_Dense(self._state_bufferB.c_ptr, self._jacB))
         check(lib.CVodeSetLinearSolverB(self._ode, self._odeB, linsolver, self._jacB))
 
+        self._jac_funcB = self._problem.make_sundials_adjoint_jac_dense()
+        check(lib.CVodeSetJacFnB(self._ode, self._odeB, self._jac_funcB.cffi))
+
         user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(self._user_data.data)))
         check(lib.CVodeSetUserDataB(self._ode, self._odeB, user_data_p))
 
@@ -302,12 +316,15 @@ class AdjointSolver:
         self._quad_buffer_out = sunode.empty_vector(self._problem.n_params)
         check(lib.CVodeQuadInitB(self._ode, self._odeB, self._quad_rhs.cffi, self._quad_buffer.c_ptr))
 
-        check(lib.CVodeQuadSStolerancesB(self._ode, self._odeB, 1e-10, 1e-10))
+        check(lib.CVodeQuadSStolerancesB(self._ode, self._odeB, 1e-8, 1e-7))
         check(lib.CVodeSetQuadErrConB(self._ode, self._odeB, 0))
 
     def _make_linsol(self):
         linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
         check(lib.CVodeSetLinearSolver(self._ode, linsolver, self._jac))
+
+        self._jac_func = self._problem.make_sundials_jac_dense()
+        check(lib.CVodeSetJacFn(self._ode, self._jac_func.cffi))
 
     def _set_tolerances(self, atol=None, rtol=None):
         atol = np.array(atol)
@@ -338,6 +355,14 @@ class AdjointSolver:
     @property
     def params_dtype(self):
         return self._problem.params_dtype
+
+    @property
+    def derivative_params_dtype(self):
+        return self._problem.derivative_subset.subset_dtype
+
+    @property
+    def remainder_params_dtype(self):
+        return self._problem.remainder_subset.subset_dtype
 
     def set_params(self, params):
         self._problem.update_params(self._user_data, params)
@@ -452,5 +477,3 @@ class AdjointSolver:
         check(CVodeGetQuadB(ode, odeB, time_p, quad_out_c_ptr))
         grad_out[:] = quad_out_data
         lamda_out[:] = state_data
-
-

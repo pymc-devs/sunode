@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from itertools import product
+
 import numpy as np
 import sympy as sym
 import dataclasses
@@ -45,17 +47,57 @@ class SympyOde(problem.Ode):
 
         check_dtype(self.derivative_subset.subset_dtype)
 
-        self._sym_time = sym.Symbol('t', real=True)
+        self._sym_time = sym.Symbol('time', real=True)
         n_fixed = self.derivative_subset.n_items - self.n_params
-        self._sym_fixed = sym.MatrixSymbol('_sym_fixed', 1, n_fixed)
-        self._sym_deriv = sym.MatrixSymbol('_sym_deriv', 1, self.n_params)
-        fixed_items = np.array([self._sym_fixed[0, i] for i in range(n_fixed)], dtype=object)
-        deriv_items = np.array([self._sym_deriv[0, i] for i in range(self.n_params)], dtype=object)
-        self._sym_params = self.derivative_subset.as_dataclass('Params', deriv_items, fixed_items)
 
-        self._sym_statevec = sym.MatrixSymbol('y', 1, self.n_states)
-        state_items = np.array([self._sym_statevec[0, i] for i in range(self.n_states)], dtype=object)
-        self._sym_states = self.state_subset.as_dataclass('State', [], state_items)
+        def make_vars(var_shapes, **kwargs):
+            vars = {}
+            for path, shape in var_shapes.items():
+                name = '_'.join(path)
+                var = sym.symarray(name, shape, **kwargs)
+                vars[path] = var
+            return vars
+
+        self._sym_states = make_vars(self.state_subset.flat_shapes, positive=True)
+        self._sym_params = make_vars(self.derivative_subset.flat_shapes, real=True)
+
+        self._varmap = {}
+        for path, vars in self._sym_states.items():
+            for idxs in product(*[range(i) for i in vars.shape]):
+                var = vars[idxs]
+                if idxs == ():
+                    self._varmap[var.name] = ('state', *path)
+                else:
+                    self._varmap[var.name] = ('state', *path, idxs)
+        for path, vars in self._sym_params.items():
+            for idxs in product(*[range(i) for i in vars.shape]):
+                var = vars[idxs]
+                if idxs == ():
+                    self._varmap[var.name] = ('params', *path)
+                else:
+                    self._varmap[var.name] = ('params', *path, idxs)
+
+        deriv_params = {
+            k: v for k, v in self._sym_params.items()
+            if k in self.derivative_subset.subset_paths
+        }
+        raveled_deriv = np.concatenate([var.ravel() for var in deriv_params.values()])
+        fixed_params = {
+            k: v for k, v in self._sym_params.items()
+            if k not in self.derivative_subset.subset_paths
+        }
+        raveled_fixed = np.concatenate([var.ravel() for var in fixed_params.values()])
+
+        def item_map(item):
+            if hasattr(item, 'shape') and item.shape == ():
+                return item.item()
+            return item
+
+        self._sym_deriv_paramsvec = raveled_deriv
+        self._sym_params = self.derivative_subset.as_dataclass('Params', raveled_deriv, raveled_fixed, item_map=item_map)
+
+        self._sym_statevec = np.concatenate([var.ravel() for var in self._sym_states.values()])
+        self._sym_states = self.state_subset.as_dataclass('State', [], self._sym_statevec, item_map=item_map)
 
         rhs = self._rhs_sympy_func(self._sym_time, self._sym_states, self._sym_params)
         dims = sunode.symode.paramset.as_flattened(self.state_subset.dims)
@@ -121,20 +163,24 @@ class SympyOde(problem.Ode):
             keys = ['.'.join(path) for path in rhs.keys()]
             raise ValueError('Unknown state variables: %s' % keys)
 
-        self._sym_dydt = sym.Matrix(rhs_list)
-        self._sym_sens = sym.MatrixSymbol('sens', self.n_params, self.n_states)
-        self._sym_lamda = sym.MatrixSymbol('lamda', 1, self.n_states)
+        dydt = sym.Matrix(rhs_list)
+        self._sym_dydt = np.array(dydt).ravel()
+        self._sym_sens = sym.symarray('sens', (self.n_params, self.n_states))
+        self._sym_lamda = sym.symarray('lamda', self.n_states)
 
-        self._sym_dydt_jac = self._sym_dydt.jacobian(self._sym_statevec.as_explicit())
-        self._sym_dydp = self._sym_dydt.jacobian(self._sym_deriv.as_explicit())
+        for idxs in product(*[range(i) for i in self._sym_lamda.shape]):
+            var = self._sym_lamda[idxs]
+            self._varmap[var.name] = ('lamda', idxs)
+
+        self._sym_dydt_jac = np.array(dydt.jacobian(self._sym_statevec))
+        self._sym_dydp = np.array(dydt.jacobian(self._sym_deriv_paramsvec))
         #jacprotsens = (self._sym_dydt_jac * self._sym_sens.T.as_explicit()).as_explicit()
         #self._sym_rhs_sens = (jacprotsens + self._sym_dydp).as_explicit().T
-        self._sym_dlamdadt = (-self._sym_lamda.as_explicit() * self._sym_dydt_jac).as_explicit()
-        self._quad_rhs = (self._sym_lamda.as_explicit() * self._sym_dydp).as_explicit()
+        self._sym_dlamdadt = -self._sym_lamda @ self._sym_dydt_jac
+        self._sym_quad_rhs = self._sym_lamda @ self._sym_dydp
 
         self.user_data_dtype = np.dtype([
-            ('fixed_params', (np.float64, (n_fixed,))),
-            ('changeable_params', (np.float64, self.n_params)),
+            ('params', self.derivative_subset.dtype),
             ('tmp_nparams_nstates', np.float64, (self.n_params, self.n_states)),
             ('tmp2_nparams_nstates', np.float64, (self.n_params, self.n_states)),
         ])
@@ -143,44 +189,23 @@ class SympyOde(problem.Ode):
         user_data = np.recarray((), dtype=self.user_data_dtype)
         return user_data
 
-    def update_changeable(self, user_data, params):
-        user_data.changeable_params[:] = params.view(np.float64)
-
     def update_params(self, user_data, params):
-        view_dtype = self.derivative_subset.subset_view_dtype
-        dtype = self.derivative_subset.subset_dtype
-        out = user_data.changeable_params.view(dtype)
-        out.fill(params.view(view_dtype))
-
-        view_dtype = self.remainder_subset.subset_view_dtype
-        dtype = self.remainder_subset.subset_dtype
-        out = user_data.fixed_params.view(dtype)
-        out.fill(params.view(view_dtype))
+        user_data.params.fill(params)
 
     def update_derivative_params(self, user_data, params):
-        user_data.changeable_params[:] = params
+        view_dtype = self.derivative_subset.subset_view_dtype
+        view = user_data.params.view(view_dtype)
+        view.fill(params)
 
     def update_remaining_params(self, user_data, params):
-        user_data.fixed_params[:] = params
+        view_dtype = self.remainder_subset.subset_view_dtype
+        view = user_data.params.view(view_dtype)
+        view.fill(params)
 
     def extract_params(self, user_data, out=None):
         if out is None:
             out = np.full((1,), np.nan, dtype=self.params_dtype)[0]
-        (
-            out
-            .view(self.derivative_subset.subset_view_dtype)
-            .fill(
-                user_data.changeable_params.view(self.derivative_subset.subset_dtype)[0]
-            )
-        )
-        (
-            out
-            .view(self.remainder_subset.subset_view_dtype)
-            .fill(
-                user_data.fixed_params.view(self.remainder_subset.subset_dtype)[0]
-            )
-        )
-
+        out.fill(user_data.params)
         return out
 
     def extract_changeable(self, user_data, out=None):
@@ -190,97 +215,83 @@ class SympyOde(problem.Ode):
         return out
 
     def make_rhs(self, *, debug=False):
-        rhs_pre, rhs_calc = lambdify_consts(
+        rhs_calc = lambdify_consts(
             "_rhs",
-            const_args=[],
-            var_args=[
-                self._sym_time,
-                self._sym_statevec,
-                self._sym_fixed,
-                self._sym_deriv,
-            ],
-            expr=self._sym_dydt.T,
+            argnames=['time', 'state', 'params'],
+            expr=np.array(self._sym_dydt.T),
+            varmap=self._varmap,
             debug=debug,
         )
 
         @numba.njit(inline='always')
         def rhs(out, t, y, user_data):
-            fixed = user_data.fixed_params
-            changeable = user_data.changeable_params
-            pre = rhs_pre()
-            rhs_calc(
-                out.reshape((1, -1)),
-                pre,
-                t,
-                y.reshape((1, -1)),
-                fixed.reshape((1, -1)),
-                changeable.reshape((1, -1)),
-            )
+            params = user_data.params
+            rhs_calc(out, t, y, params)
         return rhs
 
     def make_adjoint_rhs(self, *, debug=False):
-        adj_pre, adj_calc = lambdify_consts(
+        adj_calc = lambdify_consts(
             "_adj",
-            const_args=[],
-            var_args=[
-                self._sym_time,
-                self._sym_statevec,
-                self._sym_lamda,
-                self._sym_fixed,
-                self._sym_deriv,
-            ],
+            argnames=['time', 'state', 'lamda', 'params'],
             expr=self._sym_dlamdadt,
+            varmap=self._varmap,
             debug=debug,
         )
 
         @numba.njit(inline='always')
         def adjoint(out, t, y, lamda, user_data):
-            fixed = user_data.fixed_params
-            changeable = user_data.changeable_params
-            pre = adj_pre()
-            adj_calc(
-                out.reshape((1, -1)),
-                pre,
-                t,
-                y.reshape((1, -1)),
-                lamda.reshape((1, -1)),
-                fixed.reshape((1, -1)),
-                changeable.reshape((1, -1)),
-            )
+            params = user_data.params
+            adj_calc(out, t, y, lamda, params)
 
         return adjoint
 
     def make_adjoint_quad_rhs(self, *, debug=False):
-        quad_pre, quad_calc = lambdify_consts(
+        quad_calc = lambdify_consts(
             "_quad",
-            const_args=[],
-            var_args=[
-                self._sym_time,
-                self._sym_statevec,
-                self._sym_lamda,
-                self._sym_fixed,
-                self._sym_deriv,
-            ],
-            expr=self._quad_rhs,
+            argnames=['time', 'state', 'lamda', 'params'],
+            expr=self._sym_quad_rhs,
+            varmap=self._varmap,
             debug=debug,
         )
 
         @numba.njit(inline='always')
         def quad_rhs(out, t, y, lamda, user_data):
-            fixed = user_data.fixed_params
-            changeable = user_data.changeable_params
-            pre = quad_pre()
-            quad_calc(
-                out.reshape((1, -1)),
-                pre,
-                t,
-                y.reshape((1, -1)),
-                lamda.reshape((1, -1)),
-                fixed.reshape((1, -1)),
-                changeable.reshape((1, -1)),
-            )
+            params = user_data.params
+            quad_calc(out, t, y, lamda, params)
 
         return quad_rhs
+
+    def make_jac_dense(self, *, debug=False):
+        jac_calc = lambdify_consts(
+            "_jac_dense",
+            argnames=['time', 'state', 'params'],
+            expr=self._sym_dydt_jac,
+            varmap=self._varmap,
+            debug=debug,
+        )
+
+        @numba.njit(inline='always')
+        def jac_dense(out, t, y, fy, user_data):
+            params = user_data.params
+            jac_calc(out, t, y, params)
+
+        return jac_dense
+
+    def make_adjoint_jac_dense(self, *, debug=False):
+        jac_calc = lambdify_consts(
+            "_jac_dense",
+            argnames=['time', 'state', 'params'],
+            expr=-self._sym_dydt_jac.T,
+            varmap=self._varmap,
+            debug=debug,
+        )
+
+        @numba.njit(inline='always')
+        def jac_dense(out, t, y, yB, fyB, user_data):
+            params = user_data.params
+            jac_calc(out, t, y, params)
+
+        return jac_dense
 
     def make_sensitivity_rhs(self, *, debug=False):
         sens_pre, sens_calc = lambdify_consts(

@@ -1,4 +1,3 @@
-import sympy
 from itertools import count, product
 import ast
 import textwrap
@@ -6,24 +5,9 @@ import importlib
 import sys
 import inspect
 
-def split_constants(expr, variables, names):
-    if (not isinstance(expr, sympy.Expr)
-            or isinstance(expr, sympy.Symbol)
-            or not expr.free_symbols):
-        return [], expr
-
-    consts = []
-    if not any(x in expr.free_symbols for x in variables):
-        const = next(names)
-        consts.append((const, expr))
-        return consts, const
-
-    args = []
-    for arg in expr.args:
-        sub_consts, sub_expr = split_constants(arg, variables, names)
-        consts.extend(sub_consts)
-        args.append(sub_expr)
-    return consts, expr.func(*args)
+from sympy.printing.pycode import SciPyPrinter
+import sympy
+import numpy as np
 
 
 def cse_const(expr, args):
@@ -51,17 +35,25 @@ def cse_const(expr, args):
 
 
 class LambdifyAST:
-    def __init__(self, glob=None, locale=None):
+    def __init__(self, glob=None, locale=None, printer=None):
         self._global = glob
         self._locale = locale
         self._body = []
+        if printer is None:
+            printer = SciPyPrinter({
+                'fully_qualified_modules': True,
+                'inline': True,
+                'allow_unknown_functions': True,
+                'user_functions': {}
+            })
+        self._printer = printer
     
     def add_imports(self):
         imports = ast.parse(textwrap.dedent(
             """
-            from collections import namedtuple
             import numba
-            from numpy import *
+            import numpy
+            import scipy
             
             @numba.njit(fastmath=True)
             def logaddexp(a, b):
@@ -72,141 +64,96 @@ class LambdifyAST:
         ))
         self._body.extend(imports.body)
         
-    def add_const_namedtuple(self, const_vars, vars):
-        call = ast.Call(
-            func=ast.Name(id='namedtuple', ctx=ast.Load()),
-            args=[
-                ast.Str(s='Constants'),
-                ast.List(
-                    elts=[ast.Str(s=str(name)) for name in vars]
-                         + [ast.Str(s=str(name)) for name in const_vars],
-                    ctx=ast.Load(),
-                )
-            ],
-            keywords=[],
-        )
-        assign = ast.Assign(
-            targets=[ast.Name(id='Constants', ctx=ast.Store())],
-            value=call
-        )
-        self._body.append(assign)
-    
-    def add_const_function(self, const_vars, varlist):
+    def add_var_function(self, outname, argnames, varmap, assigns, expr):
+        if outname in argnames:
+            raise ValueError('Invalid variable name: %s' % outname)
+
         func = ast.parse(textwrap.dedent(
             """
-            @numba.njit(fastmath=True)
-            def precompute():
+            @numba.njit(fastmath=True, error_model='numpy')
+            def compute(out):
                 pass
             """
         )).body[0]
-        func.args.args = [ast.arg(arg=str(name), annotation=None)
-                          for name in const_vars]
-        body = self._varlist_as_assigns(varlist)
-        retval = ast.Return(
-            value=ast.Call(
-                func=ast.Name(id='Constants', ctx=ast.Load()),
-                args=[ast.Name(id=str(sym), ctx=ast.Load())
-                      for sym, _ in varlist]
-                     + [ast.Name(id=str(sym), ctx=ast.Load())
-                        for sym in const_vars],
-                keywords=[],
-            )
-        )
-        body.append(retval)
-        func.body = body
-        self._body.append(func)
-    
-    def add_var_function(self, const_vars, const_args, final_vars, varlist, retval):
-        func = ast.parse(textwrap.dedent(
-            """
-            @numba.njit(fastmath=True)
-            def compute(out, constants):
-                pass
-            """
-        )).body[0]
+        func.args.args[0] = ast.arg(arg=outname, annotation=None)
         func.args.args.extend(
             ast.arg(arg=str(name), annotation=None)
-            for name in final_vars
+            for name in argnames
         )
 
-        func.body = [
-            ast.Assign(
-                targets=[ast.Name(id=str(name), ctx=ast.Store())],
-                value=ast.Attribute(
-                    value=ast.Name(id='constants', ctx=ast.Load()),
-                    attr=str(name),
-                    ctx=ast.Load(),
-                )
-            )
-            for name in list(const_vars) + list(const_args)
-        ]
+        body = []
+        func.body = body
 
-        func.body.extend(self._varlist_as_assigns(varlist))
-
-        zero_out = ast.Assign(
+        # Write zeros to output
+        body.append(ast.Assign(
             targets=[ast.Subscript(
-                value=ast.Name(id='out', ctx=ast.Load()),
+                value=ast.Name(id=outname, ctx=ast.Load()),
                 slice=ast.Slice(lower=None, upper=None, step=None),
-                ctx=ast.Store()
+                ctx=ast.Store(),
             )],
             value=ast.Num(n=0)
-        )
-        func.body.append(zero_out)
+        ))
 
-        retval = sympy.Array(retval)
-        shape = retval.shape
-        assigns = []
-        for idxs in product(*[range(n) for n in shape]):
-            value = retval[idxs]
+        # Prepare local variables from cse
+        for name, value in assigns:
+            if name in varmap or name in argnames or name == outname:
+                raise ValueError('Invalid variable name: %s' % name)
+            body.append(self._as_assign(value, name))
+
+        # Write result in output
+        for idxs in product(*[range(n) for n in expr.shape]):
+            value = expr[idxs]
             if value == 0:
                 continue
-            assign = ast.Assign(
-                targets=[
-                    ast.Subscript(
-                        value=ast.Name(id='out', ctx=ast.Load()),
-                        slice=ast.Index(
-                            value=ast.Tuple(
-                                elts=[ast.Num(n=i) for i in idxs],
-                                ctx=ast.Load()
-                            )
-                        ),
-                        ctx=ast.Store(),
-                    )
-                ],
-                value=self._sympy_as_expr(value),
-            )
-            assigns.append(assign)
-        func.body.extend(assigns)
+            body.append(self._as_assign(value, outname, idxs))
+
+        path_as_ast = self._path_as_ast
+        class Trafo(ast.NodeTransformer):
+            def visit_Name(self, node):
+                if node.id in varmap and isinstance(node.ctx, ast.Load):
+                    return path_as_ast(*varmap[node.id])
+                else:
+                    return node
+
+        func = Trafo().visit(func)
+
         self._body.append(func)
-    
-    def _sympy_as_expr(self, expr):
-        args = list(expr.free_symbols)
-        func = sympy.lambdify(args, expr, 'numpy')
-        source = inspect.getsource(func)
-        module = ast.parse(source)
-        ret = module.body[0].body[-1]
-        return ret.value
-    
-    def _varlist_as_assigns(self, varlist):
-        assigns = []
-        for symb, val in varlist:
-            value_ast = self._sympy_as_expr(val)
-            assign = ast.Assign(
-                targets=[ast.Name(id=str(symb), ctx=ast.Store())],
-                value=value_ast,
-            )
-            assigns.append(assign)
-        return assigns
-    
+
+    def _sympy_as_ast(self, expr):
+        module = ast.parse(self._printer.doprint(expr))
+        return module.body[0].value
+
+    def _path_as_ast(self, varname, *path, as_store=False):
+        current = ast.Name(id=varname, ctx=ast.Load())
+        for var in path:
+            if isinstance(var, str):
+                outer = ast.Attribute(value=current, attr=var, ctx=ast.Load())
+            elif isinstance(var, tuple):
+                tup = ast.Tuple(elts=[ast.Num(n=int(i)) for i in var], ctx=ast.Load())
+                outer = ast.Subscript(value=current, slice=ast.Index(value=tup), ctx=ast.Load())
+            else:
+                raise ValueError('Invalid path item: %s' % var)
+            current = outer
+        if as_store:
+            current.ctx = ast.Store()
+        return current
+
+    def _as_assign(self, expr, leftname, *leftpath):
+        value = self._sympy_as_ast(expr)
+        return ast.Assign(
+            targets=[self._path_as_ast(leftname, *leftpath, as_store=True)],
+            value=value,
+        )
+
     def as_module(self):
         mod = ast.Module(body=self._body)
         return ast.fix_missing_locations(mod)
-    
+
     def as_string(self):
         import astor
         return astor.to_source(self.as_module())
 
-    
+
 class AstLoader(importlib.abc.InspectLoader):
     def __init__(self, asts):
         self._asts = asts
@@ -222,7 +169,7 @@ class AstLoader(importlib.abc.InspectLoader):
         return self.source_to_code(self._asts[fullname])
 
     
-def lambdify_consts(module_name, const_args, var_args, expr, debug=False):
+def lambdify_consts(module_name, argnames, expr, varmap, debug=False):
     """Compile a sympy expression using numba.
     
     Split the expression into two functions: one, that precomputes
@@ -272,14 +219,14 @@ def lambdify_consts(module_name, const_args, var_args, expr, debug=False):
     >>> z.n(subs={c1: -0.2, c2: 0.2, x1: 1., x2: 3.})
     3.67296436111770
     """
-    consts, vars, final = cse_const(expr, var_args)
-    pre_vars = [sym for sym, _ in consts]
+    cse_names = (sympy.Symbol(f'CSE_DUMMY__{i}_') for i in count())
+    assigns, final = sympy.cse(list(expr.ravel()), cse_names)
+    expr = np.array(final).reshape(expr.shape)
+    assigns = [(var.name, e) for (var, e) in assigns]
 
     lam = LambdifyAST()
     lam.add_imports()
-    lam.add_const_namedtuple(const_args, pre_vars)
-    lam.add_const_function(const_args, consts)
-    lam.add_var_function(pre_vars, const_args, var_args, vars, final)
+    lam.add_var_function('_out', argnames, varmap, assigns, expr)
     mod = lam.as_module()
     if debug:
         print(lam.as_string())
@@ -289,7 +236,7 @@ def lambdify_consts(module_name, const_args, var_args, expr, debug=False):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     sys.modules[module_name] = module
-    return module.precompute, module.compute
+    return module.compute
 
 import sympy as sy
 import sympy.codegen.rewriting

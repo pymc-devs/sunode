@@ -29,6 +29,7 @@ def as_nested(vals):
         current = out
         for name in names[:-1]:
             current = current.setdefault(name, {})
+        assert names[-1] not in current
         current[names[-1]] = val
     return out
 
