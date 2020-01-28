@@ -418,7 +418,7 @@ class AdjointSolver:
                                       % (ERROR_CODES[retval], retval))
             y_out[i, :] = state_data
 
-    def solve_backward(self, t0, tend, tvals, grads, grad_out, lamda_out):
+    def solve_backward(self, t0, tend, tvals, grads, grad_out, lamda_out, lamda_all_out=None, quad_all_out=None, max_retries=50):
         CVodeReInitB = lib.CVodeReInitB
         CVodeQuadReInitB = lib.CVodeQuadReInitB
         CVodeGetQuadB = lib.CVodeGetQuadB
@@ -451,17 +451,26 @@ class AdjointSolver:
                 continue
 
             retval = TOO_MUCH_WORK
-            while retval == TOO_MUCH_WORK:
+            retry = 0
+            while retval == TOO_MUCH_WORK and retry < max_retries:
                 retval = CVodeB(ode, t, lib.CV_NORMAL)
+                retry += 1
                 if retval != TOO_MUCH_WORK and retval != 0:
                     raise SolverError("Bad sundials return code while solving ode: %s (%s)"
                                       % (ERROR_CODES[retval], retval))
+            if retval == TOO_MUCH_WORK:
+                raise SolverError("Too many solver retries.")
 
             check(CVodeGetB(ode, odeB, time_p, state_c_ptr))
             check(CVodeGetQuadB(ode, odeB, time_p, quad_out_c_ptr))
             quad_data[:] = quad_out_data[:]
             assert time_p[0] == t, (time_p[0], t)
             state_data[:] -= grad
+            if lamda_all_out is not None:
+                lamda_all_out[i, :] = state_data
+            if quad_all_out is not None:
+                quad_all_out[i, :] = quad_data
+
             check(CVodeReInitB(ode, odeB, t, state_c_ptr))
             check(CVodeQuadReInitB(ode, odeB, quad_c_ptr))
 
