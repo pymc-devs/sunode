@@ -272,8 +272,8 @@ class AdjointSolver:
 
         self._set_tolerances(abstol, reltol)
         if self._constraints is not None:
-            assert constraints.shape == (n_states,)
-            self._constraints_vec = sunode.from_numpy(constraints)
+            self._constraints = np.broadcast_to(constraints, (n_states,)).copy()
+            self._constraints_vec = sunode.from_numpy(self._constraints)
             check(lib.CVodeSetConstraints(self._ode, self._constraints_vec.c_ptr))
 
         self._make_linsol()
