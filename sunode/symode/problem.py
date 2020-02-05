@@ -183,10 +183,14 @@ class SympyOde(problem.Ode):
             ('params', self.derivative_subset.dtype),
             ('tmp_nparams_nstates', np.float64, (self.n_params, self.n_states)),
             ('tmp2_nparams_nstates', np.float64, (self.n_params, self.n_states)),
+            ('error_states', self.state_dtype),
+            ('error_rhs', np.float64, (self.n_states,)),
+            ('error_jac', np.float64, (self.n_states, self.n_states)),
         ])
 
     def make_user_data(self):
         user_data = np.recarray((), dtype=self.user_data_dtype)
+        #user_data = np.zeros((), dtype=self.user_data_dtype)
         return user_data
 
     def update_params(self, user_data, params):
@@ -227,6 +231,13 @@ class SympyOde(problem.Ode):
         def rhs(out, t, y, user_data):
             params = user_data.params
             rhs_calc(out, t, y, params)
+
+            if (~np.isfinite(out)).any():
+                user_data.error_rhs[:] = out
+                user_data.error_states = y
+                return 1
+            return 0
+
         return rhs
 
     def make_adjoint_rhs(self, *, debug=False):
@@ -242,6 +253,10 @@ class SympyOde(problem.Ode):
         def adjoint(out, t, y, lamda, user_data):
             params = user_data.params
             adj_calc(out, t, y, lamda, params)
+
+            if (~np.isfinite(out)).any():
+                return 1
+            return 0
 
         return adjoint
 
@@ -259,6 +274,10 @@ class SympyOde(problem.Ode):
             params = user_data.params
             quad_calc(out, t, y, lamda, params)
 
+            if (~np.isfinite(out)).any():
+                return 1
+            return 0
+
         return quad_rhs
 
     def make_jac_dense(self, *, debug=False):
@@ -274,6 +293,11 @@ class SympyOde(problem.Ode):
         def jac_dense(out, t, y, fy, user_data):
             params = user_data.params
             jac_calc(out, t, y, params)
+            if (~np.isfinite(out)).any():
+                user_data.error_jac[:] = out
+                user_data.error_states = y
+                return 1
+            return 0
 
         return jac_dense
 
@@ -290,6 +314,10 @@ class SympyOde(problem.Ode):
         def jac_dense(out, t, y, yB, fyB, user_data):
             params = user_data.params
             jac_calc(out, t, y, params)
+
+            if (~np.isfinite(out)).any():
+                return 1
+            return 0
 
         return jac_dense
 
@@ -330,6 +358,9 @@ class SympyOde(problem.Ode):
                 fixed.reshape((1, -1)),
                 changeable.reshape((1, -1)),
             )
+
+            if (~np.isfinite(out)).any():
+                return 1
 
             for i in range(n_params):
                 out[i][:] = out_array[i, :]

@@ -20,8 +20,6 @@ class Ode(Protocol):
     user_data_dtype: np.dtype
     state_dtype: np.dtype
     state_subset: DTypeSubset
-    n_params: int
-    n_states: int
 
     def make_rhs(self):
         pass
@@ -143,8 +141,7 @@ class Ode(Protocol):
 
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
 
-            rhs(out, t, y, user_data)
-            return 0
+            return rhs(out, t, y, user_data)
 
         return rhs_wrapper
 
@@ -182,14 +179,13 @@ class Ode(Protocol):
 
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
 
-            adj(
+            return adj(
                 yBdot,
                 t,
                 y,
                 yB,
                 user_data,
             )
-            return 0
 
         return adj_rhs_wrapper
 
@@ -225,14 +221,13 @@ class Ode(Protocol):
 
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
 
-            adjoint_quad(
+            return adjoint_quad(
                 qBdot,
                 t,
                 y,
                 yB,
                 user_data,
             )
-            return 0
 
         return quad_rhs_wrapper
 
@@ -269,15 +264,13 @@ class Ode(Protocol):
                 out_i = numba.carray(out_i_ptr, (n_vars,))
                 out.append(out_i)
 
-            sens_rhs(
+            return sens_rhs(
                 out,
                 t,
                 y,
                 yS,
                 user_data,
             )
-
-            return 0
 
         return sens_rhs_wrapper
 
@@ -315,9 +308,7 @@ class Ode(Protocol):
 
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
             
-            jac_dense(out, t, y, yB, fyB, user_data)
-
-            return 0
+            return jac_dense(out, t, y, yB, fyB, user_data)
 
         return jac_dense_wrapper
 
@@ -349,8 +340,6 @@ class Ode(Protocol):
             fy = numba.carray(fy_ptr, (n_vars,))
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
             
-            jac_dense(out, t, y, fy, user_data)
-
-            return 0
+            return jac_dense(out, t, y, fy, user_data)
 
         return jac_dense_wrapper
