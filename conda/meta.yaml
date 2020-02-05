@@ -9,7 +9,7 @@ source:
   path: ..
 
 build:
-  number: 2
+  number: 4
   script: "{{ PYTHON }} -m pip install . -vv"
 
 requirements:

@@ -10,8 +10,8 @@ ffi = sunode._cvodes.ffi
 lib = sunode._cvodes.lib
 
 
-ERROR_CODES = [name for name in dir(lib) if name.startswith('CV_')]
-ERROR_CODES = {getattr(lib, name): name for name in ERROR_CODES}
+_ERROR_CODES = [name for name in dir(lib) if name.startswith('CV_')]
+ERROR_CODES = {getattr(lib, name): name for name in _ERROR_CODES}
 
 
 def _as_dict(data):
@@ -316,8 +316,8 @@ class AdjointSolver:
         self._quad_buffer_out = sunode.empty_vector(self._problem.n_params)
         check(lib.CVodeQuadInitB(self._ode, self._odeB, self._quad_rhs.cffi, self._quad_buffer.c_ptr))
 
-        check(lib.CVodeQuadSStolerancesB(self._ode, self._odeB, 1e-8, 1e-7))
-        check(lib.CVodeSetQuadErrConB(self._ode, self._odeB, 0))
+        check(lib.CVodeQuadSStolerancesB(self._ode, self._odeB, 1e-10, 1e-10))
+        check(lib.CVodeSetQuadErrConB(self._ode, self._odeB, 1))
 
     def _make_linsol(self):
         linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
