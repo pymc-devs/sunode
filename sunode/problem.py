@@ -2,19 +2,19 @@ from __future__ import annotations
 
 from typing import Union, TypeVar, Tuple, Callable, Any
 from typing_extensions import Protocol
-from sunode.basic import Matrix, DenseMatrix, SparseMatrix, BandMatrix
-from sunode.builder import Option, Builder
-from sunode import _cvodes
-import numba  # type: ignore
+
+import numba
 import numpy as np
 
+from sunode.matrix import Matrix, Dense, Sparse, Band
+from sunode.basic import lib, ffi
 from sunode.symode.paramset import as_nested
 
 lib = _cvodes.lib
 ffi = _cvodes.ffi
 
 
-class Ode(Protocol):
+class Problem(Protocol):
     params_dtype: np.dtype
     derivative_subset: DTypeSubset
     user_data_dtype: np.dtype
@@ -90,7 +90,7 @@ class Ode(Protocol):
 
         data = xr.Dataset()
         data['time'] = ('time', tvals)
-        # TODO t0?
+        #  TODO t0?
         if unstack_state:
             state = as_dict(solution, ['solution'])
             for name in state:

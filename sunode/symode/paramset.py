@@ -1,14 +1,13 @@
-import numba
 import numpy as np
 from collections import namedtuple
-import sympy
 import dataclasses
+
 import pandas as pd
 
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Union, Any, Optional
 
 
-def as_flattened(vals, base=None):
+def as_flattened(vals: Dict[str, Any], base: Optional[Tuple[str, ...]] = None) -> Dict[Tuple[str, ...], Any]:
     if base is None:
         base = tuple()
     out = {}
@@ -21,8 +20,8 @@ def as_flattened(vals, base=None):
     return out
 
 
-def as_nested(vals):
-    out = {}
+def as_nested(vals: Dict[Tuple[str, ...], Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
 
     for names, val in vals.items():
         assert len(names) >= 1
@@ -34,7 +33,7 @@ def as_nested(vals):
     return out
 
 
-def count_items(dtype):
+def count_items(dtype: np.dtype) -> int:
     if dtype.fields is None:
         prod = 1
         for length in dtype.shape:
@@ -47,8 +46,26 @@ def count_items(dtype):
         return num
 
 
-class ParamSet:
-    pass
+def _as_dict(data):
+    if data.dtype.fields is not None:
+        return {name: _as_dict(data[name]) for name in data.dtype.fields}
+    else:
+        return data
+
+
+def _from_dict(data, vals):
+    if data.dtype.fields is not None:
+        for name, (subtype, _) in data.dtype.fields.items():
+            if subtype.fields is not None:
+                _from_dict(data[name], vals[name])
+            else:
+                data[name] = vals[name]
+    else:
+        data[...] = vals
+
+
+Shape = Tuple[int, ...]
+Path = Tuple[str, ...]
 
 
 class DTypeSubset:
@@ -57,43 +74,46 @@ class DTypeSubset:
     subset_view_dtype: np.dtype
 
     coords: Dict[str, pd.Index]
-    dims: Dict[str, Tuple[str]]
+    dims: Dict[str, Any]
 
-    paths: List[Tuple[str]]
-    subset_paths: List[Tuple[str]]
+    paths: List[Path]
+    subset_paths: List[Path]
 
     # Map each path to a slice into the combined array
-    flat_slices: Dict[Tuple[str], slice]
-    flat_shapes: Dict[Tuple[str], slice]
+    flat_slices: Dict[Path, slice]
+    flat_shapes: Dict[Path, Shape]
 
     item_count: int
 
-    def __init__(self, dims, subset_paths, fixed_dtype=None, coords=None, dim_basename=''):
+    def __init__(
+        self,
+        dims: Dict[str, Any],
+        subset_paths: List[Path],
+        fixed_dtype: Optional[np.dtype] = None,
+        coords: Optional[Dict[str, pd.Index]] = None,
+        dim_basename: str = ''
+    ) -> None:
         if coords is None:
             coords = {}
         else:
             coords = {name: pd.Index(coord) for name, coord in coords.items()}
 
-        dtype = []
-        subset_dtype = []
+        dtype: List[Tuple[str, Any, Tuple[int, ...]]] = []
+        subset_dtype: List[Tuple[str, Any, Tuple[int, ...]]] = []
         subset_view_dtype = []
 
-        paths = []
+        paths: List[Tuple[str, ...]] = []
 
-        slices = {}
-        subset_slices = {}
+        flat_slices: Dict[Tuple[str, ...], slice] = {}
+        flat_shapes: Dict[Tuple[str, ...], Tuple[int, ...]] = {}
 
-        flat_slices = {}
-        flat_shapes = {}
-
-        dims_out = {}
+        dims_out: Dict[str, Any] = {}
 
         subset_names = []
         subset_offsets = []
         offset = 0
         item_count = 0
         for name, val in dims.items():
-
             if isinstance(val, dict):
                 flat_sub_paths = [p[1:] for p in subset_paths if len(p) > 0 and p[0] == name]
                 sub_subset = DTypeSubset(val, flat_sub_paths, fixed_dtype=fixed_dtype, coords=coords)
@@ -176,14 +196,14 @@ class DTypeSubset:
         self.subset_paths = [path for path in paths if path in subset_paths]
 
     @property
-    def n_subset(self):
+    def n_subset(self) -> int:
         return count_items(self.subset_dtype)
 
     @property
-    def n_items(self):
+    def n_items(self) -> int:
         return count_items(self.dtype)
 
-    def set_from_subset(self, value_buffer, subset_buffer):
+    def set_from_subset(self, value_buffer: np.ndarray, subset_buffer: np.ndarray) -> None:
         value_buffer.view(self.subset_dtype).fill(subset_buffer)
 
     def as_dataclass(self, dataclass_name, flat_subset, flat_remainder, item_map=None):
@@ -220,307 +240,25 @@ class DTypeSubset:
         return params
 
     def from_dict(self, vals, out=None):
-        pass
+        if out is None:
+            out = np.zeros((1,), dtype=self.dtype)[0]
+        _from_dict(out, vals)
 
     def subset_from_dict(self, vals, out=None):
-        pass
+        if out is None:
+            out = np.zeros((1,), dtype=self.subset_dtype)[0]
+        _from_dict(out, vals)
 
     def as_dict(self, vals):
-        pass
+        if vals.dtype != self.dtype:
+            raise ValueError('Invalid dtype.')
+        return _as_dict(vals)
 
     def subset_as_dict(self, vals):
-        pass
+        if vals.dtype != self.subset_dtype:
+            raise ValueError('Invalid dtype.')
+        return _as_dict(vals)
 
-    def slice_as_dataclass(self, array, array_subset, wrap_func=None):
-        pass
-
-    def remainder(self):
+    def remainder(self) -> DTypeSubset:
         remainder = list(set(self.paths) - set(self.subset_paths))
         return DTypeSubset(self.dims, remainder, coords=self.coords)
-
-
-"""
-class ParamSet:
-    variables
-    changeables
-    dtype
-    changeables_dtype
-    changeables_view_dtype
-    fixed_dtype
-    fixed_view_dtype
-
-    def as_dict(self, *, array=None, record=None):
-        pass
-
-    def changeable_as_dict(self, *, array=None, record=None):
-        pass
-
-    def fixed_as_dict(self, *, array=None, record=None):
-        pass
-
-
-
-    def array_from_dict(self, values, out=None):
-        pass
-
-    def record_from_dict(self, values, out=None):
-        pass
-
-
-
-
-    def __init__(self, variables, changeable_vars, fixed_dtype=None):
-        self._variables = variables
-        self._changeables = changeable_vars
-
-        self._spec = spec
-        self._dtype, self._idxs, self._count, self._paths, self._changeable_paths = ParamSet._parse_param_spec(spec)
-        self._values = np.empty((), dtype=self._dtype)
-        self.record = self._values.view(np.rec.recarray).reshape(1)[0]
-        self._array = self._values.view((np.float64, len(self)))
-        values = self.update_from_dict(initial_values, allow_missing=False)
-    
-    def __len__(self):
-        return self._coun
-    
-    def copy(self):
-        return ParamSet(self._spec, self.to_dict())
-    
-    @staticmethod
-    def _parse_param_spec(spec):
-        changeable_idxs = []
-        dtype = []
-        paths = []
-        changeable_paths = []
-
-        i = 0
-        for key, value, *shape in spec:
-            if isinstance(value, list):
-                sub_dtype, sub_idxs, count, sub_paths, sub_changeable_paths = ParamSet._parse_param_spec(value)
-                dtype.append((key, sub_dtype))
-                changeable_idxs.extend(idx + i for idx in sub_idxs)
-                paths.extend('.'.join([key, p]) for p in sub_paths)
-                changeable_paths.extend('.'.join([key, p]) for p in sub_changeable_paths)
-                i += count
-            else:
-                assert len(shape) <= 1
-                if not shape:
-                    shape = ()
-                else:
-                    shape = shape[0]
-                dtype.append((key, np.float64, shape))
-                count = np.product(shape, dtype=int)
-                paths.append(key)
-                if value:
-                    changeable_idxs.extend(idx + i for idx in range(count))
-                    changeable_paths.append(key)
-                i += count
-        return np.dtype(dtype), np.array(changeable_idxs, dtype=int), i, paths, changeable_paths
-    
-    @staticmethod
-    def _update_from_dict(values, allow_missing, array, dtype):
-        if not allow_missing:
-            missing = set(dtype.fields) - set(values)
-            if missing:
-                raise ValueError('Missing parameters: %s' % missing)
-        for key, val in values.items():
-            if key not in dtype.fields:
-                raise KeyError('Unknown parameter: %s' % key)
-            subdtype, offset = dtype.fields[key]
-            offset = offset // 8
-            if isinstance(val, dict):
-                ParamSet._update_from_dict(
-                    val, allow_missing, array[offset:], subdtype)
-            else:
-                data = np.asarray(val)
-                if np.dtype((data.dtype, data.shape)) != subdtype:
-                    raise ValueError('Invalid dtype %s. Should be %s'
-                                     % (data.dtype, subdtype))
-                array[offset:data.size + offset] = data.ravel()
-
-    def update_from_dict(self, values, allow_missing=True):
-        ParamSet._update_from_dict(
-            values, allow_missing, self._array, self._dtype)
-        
-    def to_dict(self):
-        def to_dict_rec(value):
-            dtype = value.dtype
-            out = {}
-
-            for key, (subdtype, _) in dtype.fields.items():
-                if not subdtype.fields:
-                    val = value[key].copy()
-                else:
-                    val = to_dict_rec(value[key])
-                out[key] = val
-            return out
-        return to_dict_rec(self.record)
-
-    def pprint(self):
-        import json
-        class NumpyEncoder(json.JSONEncoder):
-            def default(self, obj):
-                if isinstance(obj, np.ndarray):
-                    return obj.tolist()
-                return json.JSONEncoder.default(self, obj)
-
-        json_dump = json.dumps(self.to_dict(), cls=NumpyEncoder, indent=4)
-        print(json_dump)
-        
-    def print_changeable(self):
-        import pprint
-        def _get_names_changeable(name_list,name_upper,params):
-            for param in params:
-                if isinstance(param[1], bool):
-                    if param[1]:
-                        name_list.append(name_upper + param[0])
-                else:
-                    _get_names_changeable(name_list,name_upper + param[0] + '.', param[1])
-        name_list = []
-        _get_names_changeable(name_list,'',self._spec)
-
-        pprint.pprint(dict(zip(name_list,self.changeable_array())))
-    
-    def array_view(self):
-        return self._array
-
-    def changeable_array(self):
-        return self._array[self._idxs]
-    
-    def fixed_array(self):
-        return np.delete(self._array, self._idxs)
-    
-    def set_changeable(self, values):
-        self._array[self._idxs] = values
-
-    def set_fixed(self, values):
-        all_idxs = range(len(self._array))
-        idxs = [i for i in all_idxs if i not in self._idxs]
-        assert values.shape == (len(idxs),)
-        self._array[idxs] = values
-
-    @property
-    def paths(self):
-        return self._paths
-    
-    @property
-    def changeable_paths(self):
-        return self._changeable_paths
-    
-    def as_sympy(self, array_symbol):
-        return self._as_sympy('SympyParams', array_symbol, self._dtype)
-    
-    def _as_sympy(self, name, array_symbol, dtype):
-        fields = dtype.fields
-        if fields is None:
-            print(dtype)
-            return array_symbol[0, 0]
-        Type = namedtuple(name, list(fields))
-        print(fields, array_symbol, array_symbol.shape)
-        vals = [self._as_sympy(name, array_symbol[:, offset//8:], subdtype)
-                for name, (subdtype, offset) in fields.items()]
-        return Type(*vals)
-    
-    def as_sympy(self, name):
-        fixed = sympy.MatrixSymbol(
-            name + 'fixed', 1, len(self) - len(self._idxs))
-        changeable = sympy.MatrixSymbol(
-            name + 'changeable', 1, len(self._idxs))
-        #fixed = sympy.symarray(name + 'fixed', (1, len(self) - len(self._idxs)))
-        #changeable = sympy.symarray(name + 'changeable', (1, len(self._idxs)))
-        return (
-            ParamSet._as_sympy('SympyParams', self._spec, fixed, changeable)[0],
-            fixed,
-            changeable
-        )
-    
-    def slice_by_path(self, path):
-        return self._slice_by_path(path.split('.'), self.record.dtype)
-    
-    def _slice_by_path(self, path, record):
-        item, *path = path
-        rec, offset = record.fields[item]
-        offset = offset // 8
-        if path:
-            inner = self._slice_by_path(path, rec)
-            return slice(inner.start + offset, inner.stop + offset)
-        size = rec.itemsize // 8
-        return slice(offset, offset + size)
-    
-    def changeable_idxs_by_path(self, path):
-        idxs = self.slice_by_path(path)
-        start, stop, step = idxs.indices(len(self.array_view()))
-        idxs = list(self._idxs)
-        try:
-            return [idxs.index(i) for i in range(start, stop, step)]
-        except ValueError:
-            raise KeyError('Path is not changeable: %s' % path)
-    
-    @staticmethod
-    def _as_sympy(name, spec, fixed, changeable):
-        i_fixed = 0
-        i_changeable = 0
-        
-        fields = []
-        
-        for key, value, *shape in spec:
-            if isinstance(value, list):
-                if changeable is None or changeable.shape[-1] == i_changeable:
-                    rem_changeable = None
-                else:
-                    rem_changeable = changeable[:, i_changeable:]
-                if fixed is None or fixed.shape[-1] == i_fixed:
-                    rem_fixed = None
-                else:
-                    rem_fixed = fixed[:, i_fixed:]
-                params, inner_i_fixed, inner_i_changeable = ParamSet._as_sympy(
-                    key, value, rem_fixed, rem_changeable)
-                i_fixed += inner_i_fixed
-                i_changeable += inner_i_changeable
-            else:
-                assert len(shape) <= 1
-                if not shape:
-                    shape = ()
-                else:
-                    shape = shape[0]
-                count = np.product(shape, dtype=int)
-                if value:
-                    if shape == ():
-                        params = changeable[0, i_changeable]
-                    else:
-                        vals = [changeable[0, i]
-                                for i in range(i_changeable, i_changeable+count)]
-                        params = sympy.Array(vals).reshape(*shape)
-                    i_changeable += count
-                else:
-                    if shape == ():
-                        params = fixed[0, i_fixed]
-                    else:
-                        vals = [fixed[0, i] for i in range(i_fixed, i_fixed+count)]
-                        params = sympy.Array(vals).reshape(*shape)
-                    i_fixed += count
-            fields.append((key, params))
-        
-        Type = dataclasses.make_dataclass(name, [name for name, _ in fields])
-        return Type(*[params for _, params in fields]), i_fixed, i_changeable
-
-
-    @staticmethod
-    def _contains_param(path, record):
-        split_path = path.split(".", 1)
-        if len(split_path) == 1:
-            return split_path[0] in record.dtype.fields
-        else:
-            item, path = split_path
-            if item not in record.dtype.fields:
-                return False
-            return ParamSet._contains_param(path, record[item])
-
-
-    def contains_param(self, param):
-        return ParamSet._contains_param(param, self.record)
-
-
-    def is_changeable(self, path):
-        return self.slice_by_path(path).start in self._idxs
-"""

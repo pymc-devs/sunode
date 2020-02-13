@@ -1,3 +1,5 @@
+# type: ignore
+
 import weakref
 
 import numpy as np
@@ -6,7 +8,7 @@ from hypothesis import given
 import hypothesis.strategies as st
 import hypothesis.extra.numpy as hnp
 
-from sunode import basic
+from sunode import basic, vector, matrix
 
 
 VEC_TYPES = ["serial"]
@@ -16,11 +18,11 @@ VEC_TYPES = ["serial"]
 def test_empty(size, kind):
     try:
         if size >= 0:
-            array = basic.empty_vector(size)
+            array = vector.empty_vector(size)
             assert array.shape == (size,)
         else:
             with raises(ValueError):
-                basic.empty_vector(size)
+                vector.empty_vector(size)
     except (MemoryError, OverflowError):
         pass
     import gc
@@ -37,7 +39,7 @@ def test_vector_view():
 
         return fin
 
-    vector = basic.empty_vector(10)
+    vector = vector.empty_vector(10)
     weakref.finalize(vector, make_fin("vector"))
     weakref.finalize(vector.c_ptr, make_fin("c_ptr"))
 
@@ -69,7 +71,7 @@ def test_matrix_view():
 
         return fin
 
-    mat = basic.empty_matrix((10, 8))
+    mat = matrix.empty_matrix((10, 8))
     weakref.finalize(mat, make_fin("vector"))
     weakref.finalize(mat.c_ptr, make_fin("c_ptr"))
 
@@ -101,7 +103,7 @@ def test_sparse_view():
 
         return fin
 
-    mat = basic.empty_matrix(
+    mat = matrix.empty_matrix(
         (10, 8), "sparse", sparsity=np.random.randn(10, 8) > 0, format="csr"
     )
     weakref.finalize(mat, make_fin("vector"))
@@ -127,7 +129,7 @@ def test_sparse_view():
 
 
 def test_sparse_realloc():
-    mat = basic.empty_matrix(
+    mat = matrix.empty_matrix(
         (10, 8), "sparse", sparsity=np.random.randn(10, 8) > 0, format="csr"
     )
     data = mat.data
@@ -155,7 +157,7 @@ def test_from_numpy_ownership():
     array = np.zeros(10, dtype=basic.data_dtype)
     weakref.finalize(array, make_fin("array"))
 
-    vec = basic.from_numpy(array, copy=False)
+    vec = vector.from_numpy(array, copy=False)
 
     weakref.finalize(vec, make_fin("vector"))
     weakref.finalize(vec.c_ptr, make_fin("c_ptr"))
@@ -183,7 +185,7 @@ def test_from_numpy():
         assert False
 
     data = np.ones(10, dtype=dtype)
-    vec = basic.from_numpy(data)
+    vec = vector.from_numpy(data)
     assert len(vec) == len(data)
     assert vec.shape == data.shape
     assert vec.data.shape == data.shape
@@ -193,27 +195,27 @@ def test_from_numpy():
     assert np.all(data == 2)
 
     with raises(ValueError):
-        basic.from_numpy(np.zeros((2, 2)))
+        vector.from_numpy(np.zeros((2, 2)))
 
     with raises(ValueError):
-        basic.from_numpy(data.astype(other_dtype))
+        vector.from_numpy(data.astype(other_dtype))
 
     with raises(ValueError):
-        basic.from_numpy(np.zeros(()))
+        vector.from_numpy(np.zeros(()))
 
-    vec = basic.from_numpy(np.zeros(0))
+    vec = vector.from_numpy(np.zeros(0))
     assert vec.shape == (0,)
     assert vec.data.shape == (0,)
     assert len(vec) == 0
 
 
 def test_empty_vector():
-    vec = basic.empty_vector(10, kind="serial")
+    vec = vector.empty_vector(10, kind="serial")
     assert vec.shape == (10,)
     assert vec.data.shape == (10,)
 
     with raises(ValueError):
-        basic.empty_vector(-1)
+        vector.empty_vector(-1)
 
     with raises(ValueError):
-        basic.empty_vector(10, kind="foo")
+        vector.empty_vector(10, kind="foo")
