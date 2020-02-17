@@ -188,20 +188,15 @@ class SympyOde(problem.Ode):
             ('error_jac', np.float64, (self.n_states, self.n_states)),
         ])
 
-    def make_user_data(self):
-        user_data = np.recarray((), dtype=self.user_data_dtype)
-        #user_data = np.zeros((), dtype=self.user_data_dtype)
-        return user_data
-
-    def update_params(self, user_data, params):
+    def update_params(self, user_data: np.ndarray, params: np.ndarray) -> None:
         user_data.params.fill(params)
 
-    def update_derivative_params(self, user_data, params):
+    def update_subset_params(self, user_data: np.ndarray, params: np.ndarray) -> None:
         view_dtype = self.derivative_subset.subset_view_dtype
         view = user_data.params.view(view_dtype)
         view.fill(params)
 
-    def update_remaining_params(self, user_data, params):
+    def update_remaining_params(self, user_data: np.ndarray, params: np.ndarray) -> None:
         view_dtype = self.remainder_subset.subset_view_dtype
         view = user_data.params.view(view_dtype)
         view.fill(params)
@@ -212,11 +207,14 @@ class SympyOde(problem.Ode):
         out.fill(user_data.params)
         return out
 
-    def extract_changeable(self, user_data, out=None):
+    def extract_subset_params(self, user_data, out=None):
         if out is None:
             out = np.empty(self.n_params)
         out[...] = user_data.changeable_params
         return out
+
+    def extract_remaining_params(self, user_data, out=None):
+        pass
 
     def make_rhs(self, *, debug=False):
         rhs_calc = lambdify_consts(

@@ -8,57 +8,72 @@ import numpy as np
 
 from sunode.matrix import Matrix, Dense, Sparse, Band
 from sunode.basic import lib, ffi
-from sunode.symode.paramset import as_nested
-
-lib = _cvodes.lib
-ffi = _cvodes.ffi
+from sunode.symode.paramset import as_nested, DTypeSubset
 
 
 class Problem(Protocol):
     params_dtype: np.dtype
-    derivative_subset: DTypeSubset
-    user_data_dtype: np.dtype
+    params_subset: DTypeSubset
     state_dtype: np.dtype
     state_subset: DTypeSubset
+    user_data_dtype: np.dtype
 
-    def make_rhs(self):
+    def make_rhs(self):  # type: ignore
         pass
 
-    def make_rhs_jac_dense(self):
-        pass
+    def make_rhs_jac_dense(self):  # type: ignore
+        return NotImplemented
 
-    def make_rhs_jac_sparse(self):
-        pass
+    def make_rhs_jac_sparse(self):  # type: ignore
+        return NotImplemented
 
-    def make_rhs_jac_band(self):
-        pass
+    def make_rhs_jac_band(self):  # type: ignore
+        return NotImplemented
 
-    def make_sensitivity_rhs(self):
-        pass
+    def make_sensitivity_rhs(self):  # type: ignore
+        return NotImplemented
 
-    def make_sensitivity_rhs_one(self):
-        pass
+    def make_sensitivity_rhs_one(self):  # type: ignore
+        return NotImplemented
 
-    def make_adjoint_rhs(self):
-        pass
+    def make_adjoint_rhs(self):  # type: ignore
+        return NotImplemented
 
-    def make_adjoint_quad_rhs(self):
-        pass
+    def make_adjoint_quad_rhs(self):  # type: ignore
+        return NotImplemented
 
-    def make_user_data(self):
-        pass
+    def make_user_data(self) -> np.ndarray:
+        return np.recarray((), dtype=self.user_data_dtype)
 
-    def update_params(self, user_data, params: dict):
-        pass
+    def update_params(self, user_data: np.ndarray, params: np.ndarray) -> None:
+        if not self.user_data_dtype == self.params_dtype:
+            raise ValueError('Problem needs to overwrite `update_params`.')
+        self.params_subset.update_params(user_data, params)
 
-    #def update_derivative_params(self, user_data, params_array: np.ndarray):
-    #    pass
+    def update_subset_params(self, user_data: np.ndarray, params: np.ndarray) -> None:
+        if not self.user_data_dtype == self.params_dtype:
+            raise ValueError('Problem needs to overwrite `update_subset_params`.')
+        self.params_subset.update_subset_params(user_data, params)
+
+    def update_remaining_params(self, user_data: np.ndarray, params: np.ndarray) -> None:
+        if not self.user_data_dtype == self.params_dtype:
+            raise ValueError('Problem needs to overwrite `update_subset_params`.')
+        self.params_subset.update_remaining_params(user_data, params)
 
     def extract_params(self, user_data, out=None):
-        pass
+        if not self.user_data_dtype == self.params_dtype:
+            raise ValueError('Problem needs to overwrite `extract_params`.')
+        self.params_subset.extract_params(user_data, out)
 
-    def with_derivative_params(self):
-        pass
+    def extract_subset_params(self, user_data, out=None):
+        if not self.user_data_dtype == self.params_dtype:
+            raise ValueError('Problem needs to overwrite `extract_subset_params`.')
+        self.params_subset.extract_subset_params(user_data, out)
+
+    def extract_remaining_params(self, user_data, out=None):
+        if not self.user_data_dtype == self.params_dtype:
+            raise ValueError('Problem needs to overwrite `extract_remaining_params`.')
+        self.params_subset.extract_remaining_params(user_data, out)
 
     @property
     def n_states(self):

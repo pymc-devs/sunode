@@ -194,6 +194,7 @@ class DTypeSubset:
 
         # Make sure the order of subset_paths is correct
         self.subset_paths = [path for path in paths if path in subset_paths]
+        self._remainder = None
 
     @property
     def n_subset(self) -> int:
@@ -259,6 +260,9 @@ class DTypeSubset:
             raise ValueError('Invalid dtype.')
         return _as_dict(vals)
 
+    @property
     def remainder(self) -> DTypeSubset:
-        remainder = list(set(self.paths) - set(self.subset_paths))
-        return DTypeSubset(self.dims, remainder, coords=self.coords)
+        if self._remainder is None:
+            remainder = list(set(self.paths) - set(self.subset_paths))
+            self._remainder = remainder
+        return self._remainder
