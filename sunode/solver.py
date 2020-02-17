@@ -1,54 +1,35 @@
-import numpy as np
-import sunode
-import numba
-import dataclasses
+from typing import overload, Union, Optional
 
-from sunode.symode.lambdify import lambdify_consts
+import numpy as np
+
+import sunode
+from sunode.basic import CPointer, ERRORS
+from sunode.problem import Problem
 
 
 ffi = sunode._cvodes.ffi
 lib = sunode._cvodes.lib
 
 
-_ERROR_CODES = [name for name in dir(lib) if name.startswith('CV_')]
-ERROR_CODES = {getattr(lib, name): name for name in _ERROR_CODES}
-
-
-def _as_dict(data):
-    if data.dtype.fields is not None:
-        return {name: _as_dict(data[name]) for name in data.dtype.fields}
-    else:
-        return data
-
-
-def _from_dict(data, vals):
-    if data.dtype.fields is not None:
-        for name, (subtype, _) in data.dtype.fields.items():
-            if subtype.fields is not None:
-                _from_dict(data[name], vals[name])
-            else:
-                data[name] = vals[name]
-    else:
-        data[...] = vals
-
-
 class SolverError(RuntimeError):
     pass
 
 
-def check(retcode):
+def check(retcode: Union[int, CPointer]) -> Union[None, CPointer]:
     if isinstance(retcode, int) and retcode != 0:
-        raise ValueError('Bad return code from sundials: %s (%s)' % (ERROR_CODES[retcode], retcode))
+        raise ValueError('Bad return code from sundials: %s (%s)' % (ERRORS[retcode], retcode))
     if isinstance(retcode, ffi.CData):
         if retcode == ffi.NULL:
             raise ValueError('Return value of sundials is NULL.')
         return retcode
+    return None
 
 
 class Solver:
-    def __init__(self, problem, *,
-                 compute_sens=False, abstol=1e-10, reltol=1e-10,
-                 sens_mode=None, scaling_factors=None, constraints=None):
+    def __init__(self, problem: Problem, *,
+                 compute_sens: bool = False, abstol: float = 1e-10, reltol: float = 1e-10,
+                 sens_mode: Optional[str] = None, scaling_factors: Optional[np.ndarray] = None,
+                 constraints: Optional[np.ndarray] = None):
         self._problem = problem
         self._user_data = problem.make_user_data()
 
@@ -80,14 +61,14 @@ class Solver:
             sens_rhs = self._problem.make_sundials_sensitivity_rhs()
             self._init_sens(sens_rhs, sens_mode)
 
-    def _make_linsol(self):
+    def _make_linsol(self) -> None:
         linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
         check(lib.CVodeSetLinearSolver(self._ode, linsolver, self._jac))
 
         self._jac_func = self._problem.make_sundials_jac_dense()
         check(lib.CVodeSetJacFn(self._ode, self._jac_func.cffi))
 
-    def _init_sens(self, sens_rhs, sens_mode, scaling_factors=None):
+    def _init_sens(self, sens_rhs, sens_mode, scaling_factors=None) -> None:
         if sens_mode == 'simultaneous':
             sens_mode = lib.CV_SIMULTANEOUS
         elif sens_mode == 'staggered':
