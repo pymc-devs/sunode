@@ -160,7 +160,7 @@ class SolveODEAdjoint(tt.Op):
 
         try:
             self._solver.solve_forward(self._t0, self._tvals, y0, self._y_out)
-        except SolverError:
+        except SolverError as e:
             self._y_out[:] = np.nan
 
         outputs[0][0] = self._y_out.copy()
@@ -171,9 +171,6 @@ class SolveODEAdjoint(tt.Op):
         y0, params, params_fixed = inputs
         backward = SolveODEAdjointBackward(self._solver, self._t0, self._tvals)
         lamda, gradient = backward(y0, params, params_fixed, g)
-        if self._t0 == self._tvals[0]:
-            lamda = lamda - g[0]
-        #return [-lamda + g[0], gradiente
         return [-lamda, gradient, tt.grad_not_implemented(self, 2, params_fixed)]
 
 
@@ -206,7 +203,7 @@ class SolveODEAdjointBackward(tt.Op):
             self._solver.solve_forward(self._t0, self._tvals, y0, self._y_out)
             self._solver.solve_backward(self._tvals[-1], self._t0, self._tvals,
                                         grads, self._grad_out, self._lamda_out)
-        except SolverError:
+        except SolverError as e:
             self._lamda_out[:] = np.nan
             self._grad_out[:] = np.nan
 

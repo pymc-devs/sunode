@@ -418,7 +418,8 @@ class AdjointSolver:
                                       % (ERROR_CODES[retval], retval))
             y_out[i, :] = state_data
 
-    def solve_backward(self, t0, tend, tvals, grads, grad_out, lamda_out, lamda_all_out=None, quad_all_out=None, max_retries=50):
+    def solve_backward(self, t0, tend, tvals, grads, grad_out, lamda_out,
+                       lamda_all_out=None, quad_all_out=None, max_retries=50):
         CVodeReInitB = lib.CVodeReInitB
         CVodeQuadReInitB = lib.CVodeQuadReInitB
         CVodeGetQuadB = lib.CVodeGetQuadB
@@ -437,52 +438,45 @@ class AdjointSolver:
         quad_out_data = self._quad_buffer_out.data
         quad_out_c_ptr = self._quad_buffer_out.c_ptr
 
-        state_data[:] = -grads[-1]
+        state_data[:] = 0
         quad_data[:] = 0
+        quad_out_data[:] = 0
 
         time_p = ffi.new('double*')
         time_p[0] = t0
 
-        check(CVodeReInitB(ode, odeB, t0, state_c_ptr))
-        check(CVodeQuadReInitB(ode, odeB, quad_c_ptr))
+        ts = [t0] + list(tvals[::-1]) + [tend]
+        t_intervals = zip(ts[1:], ts[:-1])
+        grads = [None] + list(grads)
 
-        for i, (t, grad) in enumerate(zip(reversed(tvals), reversed(grads))):
-            if i == 0:
-                continue
+        for i, ((t_lower, t_upper), grad) in enumerate(zip(t_intervals, reversed(grads))):
+            if t_lower < t_upper:
+                check(CVodeReInitB(ode, odeB, t_upper, state_c_ptr))
+                check(CVodeQuadReInitB(ode, odeB, quad_c_ptr))
 
-            retval = TOO_MUCH_WORK
-            retry = 0
-            while retval == TOO_MUCH_WORK and retry < max_retries:
-                retval = CVodeB(ode, t, lib.CV_NORMAL)
-                retry += 1
-                if retval != TOO_MUCH_WORK and retval != 0:
-                    raise SolverError("Bad sundials return code while solving ode: %s (%s)"
-                                      % (ERROR_CODES[retval], retval))
-            if retval == TOO_MUCH_WORK:
-                raise SolverError("Too many solver retries.")
+                for retry in range(max_retries):
+                    retval = CVodeB(ode, t_lower, lib.CV_NORMAL)
+                    if retval == 0:
+                        break
+                    if retval != TOO_MUCH_WORK:
+                        error = ERROR_CODES[retval]
+                        raise SolverError(f"Solving ode failed between time {t_upper} and "
+                                          f"{t_lower}: {error} ({retval})")
+                else:
+                    raise SolverError(f"Too many solver retries between time {t_upper} and {t_lower}.")
 
-            check(CVodeGetB(ode, odeB, time_p, state_c_ptr))
-            check(CVodeGetQuadB(ode, odeB, time_p, quad_out_c_ptr))
-            quad_data[:] = quad_out_data[:]
-            assert time_p[0] == t, (time_p[0], t)
-            state_data[:] -= grad
-            if lamda_all_out is not None:
-                lamda_all_out[i, :] = state_data
-            if quad_all_out is not None:
-                quad_all_out[i, :] = quad_data
+                check(CVodeGetB(ode, odeB, time_p, state_c_ptr))
+                check(CVodeGetQuadB(ode, odeB, time_p, quad_out_c_ptr))
+                quad_data[:] = quad_out_data[:]
+                assert time_p[0] == t_lower, (time_p[0], t_lower)
 
-            check(CVodeReInitB(ode, odeB, t, state_c_ptr))
-            check(CVodeQuadReInitB(ode, odeB, quad_c_ptr))
+            if grad is not None:
+                state_data[:] -= grad
 
+                if lamda_all_out is not None:
+                    lamda_all_out[-i, :] = state_data
+                if quad_all_out is not None:
+                    quad_all_out[-i, :] = quad_data
 
-        retval = TOO_MUCH_WORK
-        while t > tend and retval == TOO_MUCH_WORK:
-            retval = CVodeB(ode, tend, lib.CV_NORMAL)
-            if retval != TOO_MUCH_WORK and retval != 0:
-                raise SolverError("Bad sundials return code while solving ode: %s (%s)"
-                                  % (ERROR_CODES[retval], retval))
-
-        check(CVodeGetB(ode, odeB, time_p, state_c_ptr))
-        check(CVodeGetQuadB(ode, odeB, time_p, quad_out_c_ptr))
         grad_out[:] = quad_out_data
         lamda_out[:] = state_data

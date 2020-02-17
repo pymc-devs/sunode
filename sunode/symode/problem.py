@@ -321,6 +321,50 @@ class SympyOde(problem.Ode):
 
         return jac_dense
 
+    def make_sensitivity_rhs1(self, *, debug=False):
+        funcs = []
+
+        for i in range(self.n_params):
+            sens_calc = lambdify_consts(
+                "_sens",
+                argnames=['time', 'state', 'sens', 'params'],
+                expr=self._sym_rhs_sens,
+                debug=debug,
+            )
+
+        n_params = self.n_params
+
+        @numba.njit(inline='always')
+        def wrapper(out, t, y, yS, user_data):
+            fixed = user_data.fixed_params
+            changeable = user_data.changeable_params
+
+            out_array = user_data.tmp_nparams_nstates
+            yS_array = user_data.tmp2_nparams_nstates
+            for i in range(n_params):
+                yS_array[i, :] = yS[i]
+
+            pre = sens_pre()
+            sens_calc(
+                out_array,
+                pre,
+                t,
+                y.reshape((1, -1)),
+                yS_array,
+                fixed.reshape((1, -1)),
+                changeable.reshape((1, -1)),
+            )
+
+            if (~np.isfinite(out)).any():
+                return 1
+
+            for i in range(n_params):
+                out[i][:] = out_array[i, :]
+
+            return 0
+
+        return wrapper
+
     def make_sensitivity_rhs(self, *, debug=False):
         sens_pre, sens_calc = lambdify_consts(
             "_sens",
