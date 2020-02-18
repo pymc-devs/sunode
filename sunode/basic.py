@@ -13,7 +13,7 @@ import numba.cffi_support  # type: ignore
 from sunode import _cvodes
 
 
-__all__ = ["lib", "ffi", "ERRORS", "Borrows", "notnull", "check", "as_numpy"]
+__all__ = ["lib", "ffi", "ERRORS", "Borrows", "notnull", "check", "check_ptr", "check_code", "as_numpy"]
 
 
 logger = logging.getLogger("sunode.basic")
@@ -72,13 +72,25 @@ def notnull(ptr: CPointer, msg: Optional[str] = None) -> CPointer:
     return ptr
 
 
-def check(retval: int) -> None:
-    # TODO
-    return
+def check(retcode: Union[int, CPointer]) -> Union[None, CPointer]:
+    if isinstance(retcode, int) and retcode != 0:
+        raise ValueError('Bad return code from sundials: %s (%s)' % (ERRORS[retcode], retcode))
+    if isinstance(retcode, ffi.CData):
+        if retcode == ffi.NULL:
+            raise ValueError('Return value of sundials is NULL.')
+        return retcode
+    return None
 
 
 def check_ptr(retval: CPointer) -> CPointer:
-    # TODO
+    if retval == ffi.NULL:
+        raise ValueError('Return value of sundials is NULL.')
+    return retval
+
+
+def check_code(retval: int) -> int:
+    if isinstance(retcode, int) and retcode != 0:
+        raise ValueError('Bad return code from sundials: %s (%s)' % (ERRORS[retcode], retcode))
     return retval
 
 

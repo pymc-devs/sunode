@@ -4,7 +4,7 @@ import dataclasses
 
 import pandas as pd
 
-from typing import List, Tuple, Dict, Union, Any, Optional
+from typing import List, Tuple, Dict, Union, Any, Optional, Callable
 
 
 def as_flattened(vals: Dict[str, Any], base: Optional[Tuple[str, ...]] = None) -> Dict[Tuple[str, ...], Any]:
@@ -46,14 +46,14 @@ def count_items(dtype: np.dtype) -> int:
         return num
 
 
-def _as_dict(data):
+def _as_dict(data: np.ndarray) -> Dict[str, Any]:
     if data.dtype.fields is not None:
         return {name: _as_dict(data[name]) for name in data.dtype.fields}
     else:
         return data
 
 
-def _from_dict(data, vals):
+def _from_dict(data: np.ndarray, vals: Dict[str, Any]) -> None:
     if data.dtype.fields is not None:
         for name, (subtype, _) in data.dtype.fields.items():
             if subtype.fields is not None:
@@ -84,6 +84,8 @@ class DTypeSubset:
     flat_shapes: Dict[Path, Shape]
 
     item_count: int
+
+    _remainder: Optional['DTypeSubset']
 
     def __init__(
         self,
@@ -207,11 +209,24 @@ class DTypeSubset:
     def set_from_subset(self, value_buffer: np.ndarray, subset_buffer: np.ndarray) -> None:
         value_buffer.view(self.subset_dtype).fill(subset_buffer)
 
-    def as_dataclass(self, dataclass_name, flat_subset, flat_remainder, item_map=None):
+    def as_dataclass(
+        self,
+        dataclass_name: str,
+        flat_subset: np.ndarray,
+        flat_remainder: np.ndarray,
+        item_map: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+    ) -> Any:
         if item_map is None:
             item_map = lambda x: x
 
-        def _as_dataclass(dataclass_name, dtype, subset_paths, flat_subset, flat_remainder):
+        def _as_dataclass(
+            dataclass_name: str,
+            dtype: np.dtype,
+            subset_paths: List[Path],
+            flat_subset: np.ndarray,
+            flat_remainder: np.ndarray,
+            item_map: Callable[[np.ndarray], np.ndarray],
+        ) -> Any:
             fields = []
             
             for name, (subdtype, _) in dtype.fields.items():
@@ -228,41 +243,41 @@ class DTypeSubset:
                 else:
                     sub_paths = [p[1:] for p in subset_paths if len(p) > 0 and p[0] == name]
                     item, flat_subset, flat_remainder = _as_dataclass(
-                        name, subdtype, sub_paths, flat_subset, flat_remainder)
+                        name, subdtype, sub_paths, flat_subset, flat_remainder, item_map)
                 fields.append((name, item))
             
             Type = dataclasses.make_dataclass(dataclass_name, [name for name, _ in fields])
             return Type(*[item for _, item in fields]), flat_subset, flat_remainder
 
         params, flat_subset, flat_remainder = _as_dataclass(
-            dataclass_name, self.dtype, self.subset_paths, flat_subset, flat_remainder)
+            dataclass_name, self.dtype, self.subset_paths, flat_subset, flat_remainder, item_map)
         assert len(flat_subset) == 0
         assert len(flat_remainder) == 0
         return params
 
-    def from_dict(self, vals, out=None):
+    def from_dict(self, vals: Dict[str, Any], out: Optional[np.ndarray] = None) -> None:
         if out is None:
             out = np.zeros((1,), dtype=self.dtype)[0]
         _from_dict(out, vals)
 
-    def subset_from_dict(self, vals, out=None):
+    def subset_from_dict(self, vals: Dict[str, Any], out: Optional[np.ndarray] = None) -> None:
         if out is None:
             out = np.zeros((1,), dtype=self.subset_dtype)[0]
         _from_dict(out, vals)
 
-    def as_dict(self, vals):
+    def as_dict(self, vals: np.ndarray) -> Dict[str, Any]:
         if vals.dtype != self.dtype:
             raise ValueError('Invalid dtype.')
         return _as_dict(vals)
 
-    def subset_as_dict(self, vals):
+    def subset_as_dict(self, vals: np.ndarray) -> Dict[str, Any]:
         if vals.dtype != self.subset_dtype:
             raise ValueError('Invalid dtype.')
         return _as_dict(vals)
 
     @property
-    def remainder(self) -> DTypeSubset:
+    def remainder(self) -> 'DTypeSubset':
         if self._remainder is None:
             remainder = list(set(self.paths) - set(self.subset_paths))
-            self._remainder = remainder
+            self._remainder = DTypeSubset(self.dims, remainder, coords=self.coords)
         return self._remainder

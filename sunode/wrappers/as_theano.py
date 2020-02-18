@@ -1,19 +1,31 @@
 import theano
 import theano.tensor as tt
 import copy
+from typing import Dict, Optional, Any, Callable
 
 import numpy as np
+import pandas as pd
+import sympy as sym
 
 from sunode.solver import SolverError
-from sunode.symode.paramset import as_flattened
+from sunode.dtypesubset import as_flattened
 from sunode import basic, symode, solver
 import sunode.symode.problem
+from sunode.symode.problem import SympyProblem
 
 
-def solve_ivp(t0, y0, params, tvals, rhs, derivatives='adjoint',
-              coords=None, make_solver=None, derivative_subset=None,
-              solver_kwargs=None):
-
+def solve_ivp(
+    t0: float,
+    y0: np.ndarray,
+    params: Dict[str, Any],
+    tvals: np.ndarray,
+    rhs: Callable[[sym.Symbol, np.ndarray, np.ndarray], Dict[str, Any]],
+    derivatives: str = 'adjoint',
+    coords: Optional[Dict[str, pd.Index]] = None,
+    make_solver=None,
+    derivative_subset=None,
+    solver_kwargs=None
+) -> Any:
     dtype = basic.data_dtype
     if solver_kwargs is None:
         solver_kwargs={}
@@ -52,11 +64,12 @@ def solve_ivp(t0, y0, params, tvals, rhs, derivatives='adjoint',
                 if not isinstance(tensor, tt.Constant):
                     derivative_subset.append(path)
 
-    problem = symode.problem.SympyOde(params_dims, y0_dims, rhs, derivative_subset, coords=coords)
+    problem = symode.problem.SympyProblem(
+        params_dims, y0_dims, rhs, derivative_subset, coords=coords)
 
     flat_tensors = as_flattened(params)
     vars = []
-    for path in problem.derivative_subset.subset_paths:
+    for path in problem.params_subset.subset_paths:
         tensor = flat_tensors[path]
         if isinstance(tensor, tuple):
             tensor, _ = tensor
@@ -67,7 +80,7 @@ def solve_ivp(t0, y0, params, tvals, rhs, derivatives='adjoint',
         params_subs_flat = tt.as_tensor_variable(np.zeros(0))
 
     vars = []
-    for path in problem.remainder_subset.subset_paths:
+    for path in problem.params_subset.remainder.subset_paths:
         tensor = flat_tensors[path]
         if isinstance(tensor, tuple):
             tensor, _ = tensor

@@ -1,28 +1,163 @@
-from typing import overload, Union, Optional
+from typing import overload, Union, Optional, Callable
+import logging
+import weakref
 
 import numpy as np
 
 import sunode
-from sunode.basic import CPointer, ERRORS
+from sunode.basic import CPointer, ERRORS, lib, ffi, check, check_ptr, Borrows
 from sunode.problem import Problem
+from sunode import matrix, vector
 
 
-ffi = sunode._cvodes.ffi
-lib = sunode._cvodes.lib
+logger = logging.getLogger('sunode.solver')
 
 
 class SolverError(RuntimeError):
     pass
 
 
-def check(retcode: Union[int, CPointer]) -> Union[None, CPointer]:
-    if isinstance(retcode, int) and retcode != 0:
-        raise ValueError('Bad return code from sundials: %s (%s)' % (ERRORS[retcode], retcode))
-    if isinstance(retcode, ffi.CData):
-        if retcode == ffi.NULL:
-            raise ValueError('Return value of sundials is NULL.')
-        return retcode
-    return None
+class BaseSolver(Borrows):
+    problem: Problem
+    user_data: np.ndarray
+
+    def __init__(self, problem: Problem, *, solver: str = 'BDF', jac_kind: str = "dense"):
+        super().__init__()
+
+        self.problem = problem
+        self.user_data = problem.make_user_data()
+
+        self._state_buffer = sunode.empty_vector(self.n_states)
+        self._state_buffer.data[:] = 0.
+
+        self.borrow(self._state_buffer)
+
+        if jac_kind == 'dense':
+            self._jac = matrix.empty_matrix((self.n_states, self.n_states))
+        elif jac_kind == 'sparse':
+            self._jac = problem.make_sparse_jac_template()
+        else:
+            raise ValueErorr(f'Unknown jac_kind {jac_kind}.')
+
+        self.borrow(self._jac)
+
+        if solver == 'BDF':
+            self.c_ptr = check_ptr(lib.CVodeCreate(lib.CV_BDF))
+        elif solver == 'ADAMS':
+            self.c_ptr = check_ptr(lib.CVodeCreate(lib.CV_ADAMS))
+        else:
+            raise ValueError(f'Unknown solver {solver}.')
+
+        self._rhs = self.problem.make_sundials_rhs()
+
+        def finalize(c_ptr: CPointer, release_borrowed: Callable[[], None]) -> None:
+            if c_ptr == ffi.NULL:
+                logger.warn("Trying to free Solver, but it is NULL.")
+            else:
+                logger.debug("Freeing Solver")
+                lib.CVodeFree(c_ptr)
+            release_borrowed()
+        weakref.finalize(self, finalize, self.c_ptr, self.release_borrowed_func())
+
+    def init(self, t0, state: Optional[np.ndarray] = None, recreate_rhs: bool = False):
+        if state is not None:
+            self.state[:] = state
+        if recreate_rhs:
+            self._rhs = self.problem.make_sundials_rhs()
+        check(lib.CVodeInit(self.c_ptr, self._rhs.cffi, t0, self._state_buffer.c_ptr))
+
+    def set_tolerance(self, rtol: float, atol: Union[np.ndarray, float]) -> None:
+        self._atol = np.array(atol)
+        self._rtol = rtol
+
+        if atol.ndim == 1:
+            if not hasattr(self, '_atol_buffer'):
+                self._atol_buffer = sunode.from_numpy(atol)
+                self.borrow(self._atol_buffer)
+            atol_buffer.data[:] = atol
+            check(lib.CVodeSVtolerances(self.c_ptr, self._rtol, self._atol_buffer.c_ptr))
+        elif atol.ndim == 0:
+            check(lib.CVodeSStolerances(self.c_ptr, rtol, atol))
+        else:
+            raise ValueError('Invalid absolute tolerances.')
+
+    def set_constraints(self, constraints: Optional[np.ndarray]) -> None:
+        if constraints is None:
+            check(lib.CVodeSetConstraints(self.c_ptr, ffi.NULL))
+            return
+
+        assert constraints.shape == (self.n_states,)
+        if not hasattr(self, '_constraints_buffer'):
+            self._constraints_buffer = sunode.from_numpy(constraints)
+            self.borrow(self._constraints_buffer)
+        self._constraints_buffer.data[:] = constraints
+        check(lib.CVodeSetConstraints(self.c_ptr, self._constraints_buffer.c_ptr))
+
+    def make_output_buffers(self, tvals: np.ndarray):
+        n_states = self._problem.n_states
+        n_params = self._problem.n_params
+        y_vals = np.zeros((len(tvals), n_states))
+        if self._compute_sens:
+            sens_vals = np.zeros((len(tvals), n_params, n_states))
+            return y_vals, sens_vals
+        return y_vals
+
+    def as_xarray(self, tvals, out, sens_out=None, unstack_state=True, unstack_params=True):
+        return self._problem.solution_to_xarray(
+            tvals, out, self._user_data,
+            sensitivity=sens_out,
+            unstack_state=unstack_state, unstack_params=unstack_params
+        )
+
+    def solve(self, t0, tvals, y0, y_out, forward_sens=None, checkpointing=False):
+        CVodeReInit = lib.CVodeReInit
+        CVodeAdjReInit = lib.CVodeAdjReInit
+        CVodeF = lib.CVodeF
+        ode = self._ode
+        TOO_MUCH_WORK = lib.CV_TOO_MUCH_WORK
+
+        state_data = self._state_buffer.data
+        state_c_ptr = self._state_buffer.c_ptr
+
+        state_data[:] = y0
+
+        time_p = ffi.new('double*')
+        time_p[0] = t0
+
+        n_check = ffi.new('int*')
+        n_check[0] = 0
+
+        check(CVodeReInit(ode, t0, state_c_ptr))
+        check(CVodeAdjReInit(ode))
+
+        for i, t in enumerate(tvals):
+            if t == t0:
+                y_out[0, :] = y0
+                continue
+
+            retval = TOO_MUCH_WORK
+            while retval == TOO_MUCH_WORK:
+                retval = CVodeF(ode, t, state_c_ptr, time_p, lib.CV_NORMAL, n_check)
+                if retval != TOO_MUCH_WORK and retval != 0:
+                    raise SolverError("Bad sundials return code while solving ode: %s (%s)"
+                                      % (ERRORS[retval], retval))
+            y_out[i, :] = state_data
+
+    @property
+    def state(self) -> np.ndarray:
+        return self._state_buffer.data
+
+    @property
+    def n_states(self) -> int:
+        return self.problem.n_states
+
+    @property
+    def n_params(self) -> int:
+        return self.problem.n_params
+
+    @property
+    def current_order(self) -> int:
+        return check(lib.CVodeGetCurrentOrder(self.c_ptr))
 
 
 class Solver:
@@ -140,15 +275,15 @@ class Solver:
 
     @property
     def params_dtype(self):
-        return self._problem.params_dtype
+        return self.problem.params_dtype
 
     @property
     def derivative_params_dtype(self):
-        return self._problem.derivative_subset.subset_dtype
+        return self.problem.params_subset.subset_dtype
 
     @property
     def remainder_params_dtype(self):
-        return self._problem.remainder_subset.subset_dtype
+        return self._problem.params_subset.remainder.subset_dtype
 
     def set_params(self, params):
         self._problem.update_params(self._user_data, params)
@@ -157,7 +292,7 @@ class Solver:
         return self._problem.extract_params(self._user_data)
 
     def set_derivative_params(self, params):
-        self._problem.update_derivative_params(self._user_data, params)
+        self._problem.update_subset_params(self._user_data, params)
 
     def set_remaining_params(self, params):
         self._problem.update_remaining_params(self._user_data, params)
@@ -218,7 +353,7 @@ class Solver:
                 retval = CVode(ode, t, state_c_ptr, time_p, lib.CV_NORMAL)
                 if retval != TOO_MUCH_WORK and retval != 0:
                     raise SolverError("Bad sundials return code while solving ode: %s (%s)"
-                                      % (ERROR_CODES[retval], retval))
+                                      % (ERRORS[retval], retval))
             y_out[i, :] = state_data
 
             if self._compute_sens:
@@ -339,11 +474,11 @@ class AdjointSolver:
 
     @property
     def derivative_params_dtype(self):
-        return self._problem.derivative_subset.subset_dtype
+        return self._problem.params_subset.subset_dtype
 
     @property
     def remainder_params_dtype(self):
-        return self._problem.remainder_subset.subset_dtype
+        return self._problem.params_subset.remainder.subset_dtype
 
     def set_params(self, params):
         self._problem.update_params(self._user_data, params)
@@ -360,7 +495,7 @@ class AdjointSolver:
         return _as_dict(self.get_params())
 
     def set_derivative_params(self, params):
-        self._problem.update_derivative_params(self._user_data, params)
+        self._problem.update_subset_params(self._user_data, params)
 
     def set_remaining_params(self, params):
         self._problem.update_remaining_params(self._user_data, params)
@@ -396,7 +531,7 @@ class AdjointSolver:
                 retval = CVodeF(ode, t, state_c_ptr, time_p, lib.CV_NORMAL, n_check)
                 if retval != TOO_MUCH_WORK and retval != 0:
                     raise SolverError("Bad sundials return code while solving ode: %s (%s)"
-                                      % (ERROR_CODES[retval], retval))
+                                      % (ERRORS[retval], retval))
             y_out[i, :] = state_data
 
     def solve_backward(self, t0, tend, tvals, grads, grad_out, lamda_out,
@@ -440,7 +575,7 @@ class AdjointSolver:
                     if retval == 0:
                         break
                     if retval != TOO_MUCH_WORK:
-                        error = ERROR_CODES[retval]
+                        error = ERRORS[retval]
                         raise SolverError(f"Solving ode failed between time {t_upper} and "
                                           f"{t_lower}: {error} ({retval})")
                 else:

@@ -31,7 +31,7 @@ def empty_matrix(
     kind: Literal["dense"],
     format: Literal[None],
     sparsity: Literal[None],
-) -> Dense:
+) -> 'Dense':
     ...
 
 @overload
@@ -40,7 +40,7 @@ def empty_matrix(
     kind: str = "dense",
     format: Optional[str] = None,
     sparsity: Union[None, np.ndarray, sparse.csr_matrix, sparse.csc_matrix] = None,
-) -> Matrix:
+) -> 'Matrix':
     ...
 
 def empty_matrix(
@@ -48,7 +48,7 @@ def empty_matrix(
     kind: str = "dense",
     format: Optional[str] = None,
     sparsity: Union[None, np.ndarray, sparse.csr_matrix, sparse.csc_matrix] = None,
-) -> Matrix:
+) -> 'Matrix':
     rows, columns = shape
     if rows < 0 or columns < 0:
         raise ValueError("Number of rows and columns must not be negative.")

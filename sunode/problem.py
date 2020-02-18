@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Union, TypeVar, Tuple, Callable, Any
+from typing import Union, TypeVar, Tuple, Callable, Any, Optional, Dict
 from typing_extensions import Protocol
 
 import numba
@@ -8,7 +8,7 @@ import numpy as np
 
 from sunode.matrix import Matrix, Dense, Sparse, Band
 from sunode.basic import lib, ffi
-from sunode.symode.paramset import as_nested, DTypeSubset
+from sunode.dtypesubset import as_nested, DTypeSubset
 
 
 class Problem(Protocol):
@@ -22,6 +22,9 @@ class Problem(Protocol):
         pass
 
     def make_rhs_jac_dense(self):  # type: ignore
+        return NotImplemented
+
+    def make_rhs_sparse_jac_template(self):  # type: ignore
         return NotImplemented
 
     def make_rhs_jac_sparse(self):  # type: ignore
@@ -48,50 +51,60 @@ class Problem(Protocol):
     def update_params(self, user_data: np.ndarray, params: np.ndarray) -> None:
         if not self.user_data_dtype == self.params_dtype:
             raise ValueError('Problem needs to overwrite `update_params`.')
-        self.params_subset.update_params(user_data, params)
+        user_data.fill(params)
 
     def update_subset_params(self, user_data: np.ndarray, params: np.ndarray) -> None:
         if not self.user_data_dtype == self.params_dtype:
             raise ValueError('Problem needs to overwrite `update_subset_params`.')
-        self.params_subset.update_subset_params(user_data, params)
+        user_data.view(self.params_subset.subset_view_dtype).fill(params)
 
     def update_remaining_params(self, user_data: np.ndarray, params: np.ndarray) -> None:
         if not self.user_data_dtype == self.params_dtype:
             raise ValueError('Problem needs to overwrite `update_subset_params`.')
-        self.params_subset.update_remaining_params(user_data, params)
+        user_data.view(self.params_subset.remainder.subset_view_dtype).fill(params)
 
-    def extract_params(self, user_data, out=None):
+    def extract_params(self, user_data: np.ndarray, out: Optional[np.ndarray] = None) -> None:
         if not self.user_data_dtype == self.params_dtype:
             raise ValueError('Problem needs to overwrite `extract_params`.')
-        self.params_subset.extract_params(user_data, out)
+        if out is None:
+            out = np.empty((1,), dtype=self.params_subset.dtype)[0]
+        out.fill(user_data)
 
-    def extract_subset_params(self, user_data, out=None):
+    def extract_subset_params(self, user_data: np.ndarray, out: Optional[np.ndarray] = None) -> None:
         if not self.user_data_dtype == self.params_dtype:
             raise ValueError('Problem needs to overwrite `extract_subset_params`.')
-        self.params_subset.extract_subset_params(user_data, out)
+        if out is None:
+            out = np.empty((1,), dtype=self.params_subset.subset_dtype)[0]
+        out.fill(user_data.view(self.params_subset.subset_dtype))
 
-    def extract_remaining_params(self, user_data, out=None):
+    def extract_remaining_params(self, user_data: np.ndarray, out: Optional[np.ndarray] = None) -> None:
         if not self.user_data_dtype == self.params_dtype:
             raise ValueError('Problem needs to overwrite `extract_remaining_params`.')
-        self.params_subset.extract_remaining_params(user_data, out)
+        subset_dtype = self.params_subset.remainder.subset_view_dtype
+        dtype = self.params_subset.remainder.subset_dtype
+        if out is None:
+            out = np.empty((1,), dtype=dtype)[0]
+        out.fill(user_data.view(subset_dtype))
 
     @property
-    def n_states(self):
+    def n_states(self) -> int:
         return self.state_subset.n_items
 
     @property
-    def n_params(self):
-        return self.derivative_subset.n_subset
+    def n_params(self) -> int:
+        return self.params_subset.n_subset
 
-    def solution_to_xarray(self, tvals, solution, user_data, sensitivity=None,
-                           *, unstack_state=True, unstack_params=True):
+    def solution_to_xarray(  # type: ignore
+        self, tvals, solution, user_data, sensitivity=None,
+        *, unstack_state=True, unstack_params=True
+    ):
         import xarray as xr
 
         assert sensitivity is None, 'TODO'
         solution = solution.view(self.state_dtype)[..., 0]
         params = self.extract_params(user_data)
 
-        def as_dict(array, prepend=None):
+        def as_dict(array, prepend=None):  # type: ignore
             if prepend is None:
                 prepend = []
             dtype = array.dtype
@@ -124,7 +137,7 @@ class Problem(Protocol):
 
         return data
 
-    def flat_solution_as_dict(self, solution):
+    def flat_solution_as_dict(self, solution: np.ndarray) -> Dict[str, Any]:
         slices = self.state_subset.flat_slices
         shapes = self.state_subset.flat_shapes
         flat_views = {}
@@ -133,7 +146,7 @@ class Problem(Protocol):
             flat_views[path] = solution[:, slices[path]].reshape(shape)
         return as_nested(flat_views)
 
-    def make_sundials_rhs(self):
+    def make_sundials_rhs(self):  # type: ignore
         rhs = self.make_rhs()
 
         N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
@@ -147,7 +160,7 @@ class Problem(Protocol):
         func_type = func_type.return_type(*(func_type.args[:-1] + (user_ndtype_p,)))
 
         @numba.cfunc(func_type)
-        def rhs_wrapper(t, y_, out_, user_data_):
+        def rhs_wrapper(t, y_, out_, user_data_):  # type: ignore
             y_ptr = N_VGetArrayPointer_Serial(y_)
             n_vars = N_VGetLength_Serial(y_)
             out_ptr = N_VGetArrayPointer_Serial(out_)
@@ -160,7 +173,7 @@ class Problem(Protocol):
 
         return rhs_wrapper
 
-    def make_sundials_adjoint_rhs(self):
+    def make_sundials_adjoint_rhs(self):  # type: ignore
         user_dtype = self.user_data_dtype
         adj = self.make_adjoint_rhs()
 
@@ -177,7 +190,7 @@ class Problem(Protocol):
         func_type = func_type.return_type(*args)
 
         @numba.cfunc(func_type)
-        def adj_rhs_wrapper(t, y_, yB_, yBdot_, user_data_):
+        def adj_rhs_wrapper(t, y_, yB_, yBdot_, user_data_):  # type: ignore
             n_vars = N_VGetLength_Serial(y_)
             y_ptr = N_VGetArrayPointer_Serial(y_)
             y = numba.carray(y_ptr, (n_vars,)).view(state_dtype)[0]
@@ -204,7 +217,7 @@ class Problem(Protocol):
 
         return adj_rhs_wrapper
 
-    def make_sundials_adjoint_quad_rhs(self):
+    def make_sundials_adjoint_quad_rhs(self):  # type: ignore
         user_dtype = self.user_data_dtype
         adjoint_quad = self.make_adjoint_quad_rhs()
 
@@ -221,7 +234,7 @@ class Problem(Protocol):
         func_type = func_type.return_type(*args)
 
         @numba.cfunc(func_type)
-        def quad_rhs_wrapper(t, y_, yB_, qBdot_, user_data_):
+        def quad_rhs_wrapper(t, y_, yB_, qBdot_, user_data_):  # type: ignore
             n = N_VGetLength_Serial(y_)
             y_ptr = N_VGetArrayPointer_Serial(y_)
             y = numba.carray(y_ptr, (n,)).view(state_dtype)[0]
@@ -246,7 +259,7 @@ class Problem(Protocol):
 
         return quad_rhs_wrapper
 
-    def make_sundials_sensitivity_rhs(self):
+    def make_sundials_sensitivity_rhs(self):  # type: ignore
         sens_rhs = self.make_sensitivity_rhs()
         user_dtype = self.user_data_dtype
 
@@ -262,7 +275,9 @@ class Problem(Protocol):
         func_type = func_type.return_type(*args)
 
         @numba.cfunc(func_type)
-        def sens_rhs_wrapper(n_params, t, y_, ydot_, yS_, out_, user_data_, tmp1_, tmp2_):
+        def sens_rhs_wrapper(  # type: ignore
+            n_params, t, y_, ydot_, yS_, out_, user_data_, tmp1_, tmp2_
+        ):
             n_vars = N_VGetLength_Serial(y_)
             y_ptr = N_VGetArrayPointer_Serial(y_)
             y = numba.carray(y_ptr, (n_vars,))
@@ -289,7 +304,7 @@ class Problem(Protocol):
 
         return sens_rhs_wrapper
 
-    def make_sundials_adjoint_jac_dense(self):
+    def make_sundials_adjoint_jac_dense(self):  # type: ignore
         jac_dense = self.make_adjoint_jac_dense()
         user_dtype = self.user_data_dtype
         state_dtype = self.state_dtype
@@ -307,7 +322,7 @@ class Problem(Protocol):
         func_type = func_type.return_type(*args)
 
         @numba.cfunc(func_type)
-        def jac_dense_wrapper(t, y_, yB_, fyB_, out_, user_data_, tmp1_, tmp2_, tmp3_):
+        def jac_dense_wrapper(t, y_, yB_, fyB_, out_, user_data_, tmp1_, tmp2_, tmp3_):  # type: ignore
             n_vars = N_VGetLength_Serial(y_)
             n_lamda = N_VGetLength_Serial(yB_)
 
@@ -327,7 +342,7 @@ class Problem(Protocol):
 
         return jac_dense_wrapper
 
-    def make_sundials_jac_dense(self):
+    def make_sundials_jac_dense(self):  # type: ignore
         jac_dense = self.make_jac_dense()
         user_dtype = self.user_data_dtype
         state_dtype = self.state_dtype
@@ -345,7 +360,7 @@ class Problem(Protocol):
         func_type = func_type.return_type(*args)
 
         @numba.cfunc(func_type)
-        def jac_dense_wrapper(t, y_, fy_, out_, user_data_, tmp1_, tmp2_, tmp3_):
+        def jac_dense_wrapper(t, y_, fy_, out_, user_data_, tmp1_, tmp2_, tmp3_):  # type: ignore
             n_vars = N_VGetLength_Serial(y_)
             y_ptr = N_VGetArrayPointer_Serial(y_)
             out_ptr = SUNDenseMatrix_Data(out_)

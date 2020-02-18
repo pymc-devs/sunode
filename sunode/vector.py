@@ -12,7 +12,7 @@ from sunode.basic import lib, ffi, data_dtype, index_dtype, Borrows, notnull, as
 logger = logging.getLogger("sunode.vector")
 
 
-def empty_vector(length: int, kind: str = "serial") -> Vector:
+def empty_vector(length: int, kind: str = "serial") -> 'Vector':
     if kind not in ["serial"]:
         raise ValueError("Vector backend %s not supported." % kind)
     if length < 0:
@@ -25,7 +25,7 @@ def empty_vector(length: int, kind: str = "serial") -> Vector:
     return Vector(ptr)
 
 
-def from_numpy(array: np.ndarray, copy: bool = False) -> Vector:
+def from_numpy(array: np.ndarray, copy: bool = False) -> 'Vector':
     if array.dtype != Vector.dtype:
         raise ValueError("Must have dtype %s" % Vector.dtype)
     if not array.flags["C_CONTIGUOUS"]:

@@ -39,20 +39,20 @@ def test_vector_view():
 
         return fin
 
-    vector = vector.empty_vector(10)
-    weakref.finalize(vector, make_fin("vector"))
-    weakref.finalize(vector.c_ptr, make_fin("c_ptr"))
+    vec = vector.empty_vector(10)
+    weakref.finalize(vec, make_fin("vector"))
+    weakref.finalize(vec.c_ptr, make_fin("c_ptr"))
 
-    view1 = vector.data
+    view1 = vec.data
     weakref.finalize(view1, make_fin("view1"))
 
     view2 = view1[::2]
     weakref.finalize(view2, make_fin("view2"))
 
-    view3 = vector.data
+    view3 = vec.data
     weakref.finalize(view3, make_fin("view3"))
 
-    del vector
+    del vec
     assert order == []
     del view1
     assert order == []
