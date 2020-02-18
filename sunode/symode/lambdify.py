@@ -4,6 +4,7 @@ import textwrap
 import importlib
 import sys
 import inspect
+from functools import partial
 
 from sympy.printing.pycode import SciPyPrinter
 import sympy
@@ -60,6 +61,12 @@ class LambdifyAST:
                 min_val = fmin(a, b)
                 max_val = fmax(a, b)
                 return max_val + log1p(exp(min_val - max_val))
+
+            @numba.njit(fastmath=True)
+            def CardinalBSpline(degree, t):
+                if degree != 4:
+                    return numpy.nan
+                return ((((1/24)*t**4) if (t >= 0) and (t <= 1) else (t*(t*(t*(5/6 - 1/6*t) - 5/4) + 5/6) - 5/24) if (t >= 1) and (t <= 2) else (t*(t*(t*((1/4)*t - 5/2) + 35/4) - 25/2) + 155/24) if (t >= 2) and (t <= 3) else (t*(t*(t*(5/2 - 1/6*t) - 55/4) + 65/2) - 655/24) if (t >= 3) and (t <= 4) else (t*(t*(t*((1/24)*t - 5/6) + 25/4) - 125/6) + 625/24) if (t >= 4) and (t <= 5) else (0)))
             """
         ))
         self._body.extend(imports.body)
@@ -259,6 +266,33 @@ class logaddexp(sympy.Function):
     def _eval_is_finite(self):
         return self.args[0].is_finite and self.args[1].is_finite
 
+
+class CardinalBSpline(sy.Function):
+    nargs = 2
+
+    def as_sympy_expr(self):
+        degree, x = self.args
+        #knots = [sy.Integer(i) for i in range(n_knots)]
+        knots = [sy.Integer(i) for i in range(degree + 2)]
+        basis = sy.functions.special.bsplines.bspline_basis(degree, knots, 0, x)
+        args = basis.args
+        args_horner = []
+        for expr, cond in args:
+            args_horner.append((sym.horner(expr), cond))
+        return sy.Piecewise(*args_horner)
+
+
+def interpolate_spline(x, vals, lower, upper, degree, as_pure=False):
+    n_vals = len(vals)
+    n_knots = degree + n_vals + 1
+    basis = partial(CardinalBSpline, degree)
+    x = (x - lower) / (upper - lower)
+    x = degree + x * (n_knots - 2 * (degree) - 1)
+    basis_vecs = [basis(x - i) for i in range(len(vals))]
+    if as_pure:
+        basis_vecs = [b.as_sympy_expr() for b in basis_vecs]
+    return sum(val * b for val, b in zip(vals, basis_vecs))
+    
 
 logsumexp_2terms_opt = sympy.codegen.rewriting.ReplaceOptim(
     lambda l: (isinstance(l, sy.log)
