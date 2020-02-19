@@ -274,7 +274,7 @@ class CardinalBSpline(sy.Function):
         degree, x = self.args
         #knots = [sy.Integer(i) for i in range(n_knots)]
         knots = [sy.Integer(i) for i in range(degree + 2)]
-        basis = sy.functions.special.bsplines.bspline_basis(degree, knots, 0, x)
+        basis = sy.functions.special.bsplines.bspline_basis(degree, tuple(knots), 0, x)
         args = basis.args
         args_horner = []
         for expr, cond in args:
