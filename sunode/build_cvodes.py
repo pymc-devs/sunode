@@ -28,8 +28,22 @@ with open(os.path.join(base, "source_cvodes.c")) as fsource:
 import sys
 if sys.platform == 'win32':
     include = [os.path.join(os.environ["CONDA_PREFIX"], "Library", "include")]
+    library_dirs = [
+        os.path.join(os.environ["CONDA_PREFIX"], "Library", "lib")
+    ]
+    extra_libs = []
 else:
     include = [os.path.join(os.environ["CONDA_PREFIX"], "include")]
+    library_dirs = []
+    extra_libs = [
+        "blas",
+        "lapack",
+        "pthread",
+        "klu",
+        "sundials_sunlinsollapackdense",
+        "sundials_sunlinsollapackband",
+        "sundials_sunlinsolklu",
+    ]
 
 ffibuilder.set_source(
     "_sundials_cvodes",
@@ -39,19 +53,12 @@ ffibuilder.set_source(
         "sundials_sunmatrixdense",
         "sundials_sunmatrixband",
         "sundials_sunmatrixsparse",
-        #"sundials_sunlinsollapackdense",
-        #"sundials_sunlinsollapackband",
         "sundials_sunlinsoldense",
         "sundials_sunlinsolband",
-        #"sundials_sunlinsolklu",
         "sundials_cvodes",
-        "blas",
-        "cblas",
-        #"lapack",
-        "pthread",
-        #"klu",
-    ],
+    ] + extra_libs,
     include_dirs=include,
+    library_dirs=library_dirs,
 )
 
 if __name__ == "__main__":
