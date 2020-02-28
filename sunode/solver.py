@@ -1,11 +1,15 @@
-from typing import overload, Union, Optional, Callable
+from typing import overload, Union, Optional, Callable, Dict, Any
 import logging
 import weakref
 
 import numpy as np
+import xarray as xr
 
 import sunode
-from sunode.basic import CPointer, ERRORS, lib, ffi, check, check_ptr, Borrows
+from sunode.basic import CPointer, ERRORS, lib, ffi, check, check_ptr, Borrows, check_code
+from sunode.matrix import Matrix
+from sunode.linear_solver_wrapper import LinearSolver
+from sunode.nonlinear_solver import NonlinearSolver
 from sunode.problem import Problem
 from sunode import matrix, vector
 
@@ -20,9 +24,12 @@ class SolverError(RuntimeError):
 class BaseSolver(Borrows):
     problem: Problem
     user_data: np.ndarray
+    _input_changed: bool
 
     def __init__(self, problem: Problem, *, solver: str = 'BDF', jac_kind: str = "dense"):
         super().__init__()
+
+        self.mark_changed()
 
         self.problem = problem
         self.user_data = problem.make_user_data()
@@ -35,9 +42,9 @@ class BaseSolver(Borrows):
         if jac_kind == 'dense':
             self._jac = matrix.empty_matrix((self.n_states, self.n_states))
         elif jac_kind == 'sparse':
-            self._jac = problem.make_sparse_jac_template()
+            self._jac = problem.make_rhs_sparse_jac_template()
         else:
-            raise ValueErorr(f'Unknown jac_kind {jac_kind}.')
+            raise ValueError(f'Unknown jac_kind {jac_kind}.')
 
         self.borrow(self._jac)
 
@@ -59,29 +66,40 @@ class BaseSolver(Borrows):
             release_borrowed()
         weakref.finalize(self, finalize, self.c_ptr, self.release_borrowed_func())
 
-    def init(self, t0, state: Optional[np.ndarray] = None, recreate_rhs: bool = False):
+    def init(self, t0: float, state: Optional[np.ndarray] = None, recreate_rhs: bool = False) -> None:
         if state is not None:
             self.state[:] = state
         if recreate_rhs:
             self._rhs = self.problem.make_sundials_rhs()
         check(lib.CVodeInit(self.c_ptr, self._rhs.cffi, t0, self._state_buffer.c_ptr))
 
-    def set_tolerance(self, rtol: float, atol: Union[np.ndarray, float]) -> None:
+    def mark_changed(self, set_to: bool = True) -> None:
+        self._input_changed = set_to
+
+    @property
+    def is_changed(self) -> bool:
+        return self._input_changed
+
+    def tolerance(self, rtol: float, atol: Union[np.ndarray, float]) -> None:
+        self.mark_changed()
+
         self._atol = np.array(atol)
         self._rtol = rtol
 
-        if atol.ndim == 1:
+        if self._atol.ndim == 1:
             if not hasattr(self, '_atol_buffer'):
                 self._atol_buffer = sunode.from_numpy(atol)
                 self.borrow(self._atol_buffer)
-            atol_buffer.data[:] = atol
+            self._atol_buffer.data[:] = atol
             check(lib.CVodeSVtolerances(self.c_ptr, self._rtol, self._atol_buffer.c_ptr))
-        elif atol.ndim == 0:
-            check(lib.CVodeSStolerances(self.c_ptr, rtol, atol))
+        elif self._atol.ndim == 0:
+            check(lib.CVodeSStolerances(self.c_ptr, self._rtol, self._atol))
         else:
             raise ValueError('Invalid absolute tolerances.')
 
-    def set_constraints(self, constraints: Optional[np.ndarray]) -> None:
+    def constraints(self, constraints: Optional[np.ndarray]) -> None:
+        self.mark_changed()
+
         if constraints is None:
             check(lib.CVodeSetConstraints(self.c_ptr, ffi.NULL))
             return
@@ -93,27 +111,37 @@ class BaseSolver(Borrows):
         self._constraints_buffer.data[:] = constraints
         check(lib.CVodeSetConstraints(self.c_ptr, self._constraints_buffer.c_ptr))
 
-    def make_output_buffers(self, tvals: np.ndarray):
-        n_states = self._problem.n_states
-        n_params = self._problem.n_params
+    def make_output_buffers(self, tvals: np.ndarray) -> np.ndarray:
+        n_states = self.problem.n_states
+        n_params = self.problem.n_params
         y_vals = np.zeros((len(tvals), n_states))
-        if self._compute_sens:
-            sens_vals = np.zeros((len(tvals), n_params, n_states))
-            return y_vals, sens_vals
         return y_vals
 
-    def as_xarray(self, tvals, out, sens_out=None, unstack_state=True, unstack_params=True):
-        return self._problem.solution_to_xarray(
+    def as_xarray(
+        self,
+        tvals: np.ndarray,
+        out: np.ndarray,
+        unstack_state: bool = True,
+        unstack_params: bool = True
+    ) -> xr.Dataset:
+        return self.problem.solution_to_xarray(
             tvals, out, self._user_data,
-            sensitivity=sens_out,
             unstack_state=unstack_state, unstack_params=unstack_params
         )
 
-    def solve(self, t0, tvals, y0, y_out, forward_sens=None, checkpointing=False):
+    def solve(
+        self,
+        t0: float,
+        tvals: np.ndarray,
+        y0: np.ndarray,
+        y_out: np.ndarray,
+        forward_sens: Optional[np.ndarray] = None,
+        checkpointing: bool = False
+    ) -> None:
         CVodeReInit = lib.CVodeReInit
         CVodeAdjReInit = lib.CVodeAdjReInit
         CVodeF = lib.CVodeF
-        ode = self._ode
+        ode = self.c_ptr
         TOO_MUCH_WORK = lib.CV_TOO_MUCH_WORK
 
         state_data = self._state_buffer.data
@@ -143,6 +171,20 @@ class BaseSolver(Borrows):
                                       % (ERRORS[retval], retval))
             y_out[i, :] = state_data
 
+        self.mark_changed(False)
+
+    def linear_solver(self, solver: LinearSolver, jac_template: Matrix) -> None:
+        self.mark_changed()
+        self._linear_solver = solver
+        self.borrow(solver)
+        check(lib.CVodeSetLinearSolver(self.c_ptr, solver.c_ptr, jac_template.c_ptr))
+
+    def nonlinear_solver(self, solver: NonlinearSolver) -> None:
+        self.mark_changed()
+        self._nonlinear_solver = solver
+        self.borrow(solver)
+        check(lib.CVodeSetNonlinearSolver(self.c_ptr, solver.c_ptr))
+
     @property
     def state(self) -> np.ndarray:
         return self._state_buffer.data
@@ -156,8 +198,13 @@ class BaseSolver(Borrows):
         return self.problem.n_params
 
     @property
-    def current_order(self) -> int:
-        return check(lib.CVodeGetCurrentOrder(self.c_ptr))
+    def current_stats(self) -> Dict[str, Any]:
+        order = ffi.new('int*', 1)
+        check_code(lib.CVodeGetCurrentOrder(self.c_ptr, order))
+        
+        return {
+            "order": order[0],
+        }
 
 
 class Solver:
@@ -365,7 +412,7 @@ class Solver:
 class AdjointSolver:
     def __init__(self, problem, *,
                  abstol=1e-10, reltol=1e-10,
-                 checkpoint_n=500, interpolation='polynomial', constraints=None):
+                 checkpoint_n=1_000_000, interpolation='polynomial', constraints=None):
         self._problem = problem
 
         n_states, n_params = problem.n_states, problem.n_params

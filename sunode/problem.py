@@ -24,7 +24,7 @@ class Problem(Protocol):
     def make_rhs_jac_dense(self):  # type: ignore
         return NotImplemented
 
-    def make_rhs_sparse_jac_template(self):  # type: ignore
+    def make_rhs_sparse_jac_template(self) -> Sparse:
         return NotImplemented
 
     def make_rhs_jac_sparse(self):  # type: ignore
@@ -146,7 +146,7 @@ class Problem(Protocol):
             flat_views[path] = solution[:, slices[path]].reshape(shape)
         return as_nested(flat_views)
 
-    def make_sundials_rhs(self):  # type: ignore
+    def make_sundials_rhs(self) -> Any:
         rhs = self.make_rhs()
 
         N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
@@ -365,6 +365,39 @@ class Problem(Protocol):
             y_ptr = N_VGetArrayPointer_Serial(y_)
             out_ptr = SUNDenseMatrix_Data(out_)
             fy_ptr = N_VGetArrayPointer_Serial(fy_)
+            y = numba.carray(y_ptr, (n_vars,)).view(state_dtype)[0]
+            out = numba.farray(out_ptr, (n_vars, n_vars))
+            fy = numba.carray(fy_ptr, (n_vars,))
+            user_data = numba.carray(user_data_, (1,), user_dtype)[0]
+            
+            return jac_dense(out, t, y, fy, user_data)
+
+        return jac_dense_wrapper
+
+    def make_sundials_jac_sparse(self, format='CSR'):  # type: ignore
+        jac_sparse = self.make_jac_sparse(format=format)
+
+        user_dtype = self.user_data_dtype
+        state_dtype = self.state_dtype
+
+        N_VGetArrayPointer = lib.N_VGetArrayPointer
+        N_VGetLength = lib.N_VGetLength
+        SUNSparseMatrix_Data = lib.SUNSparseMatrix_Data
+
+        user_ndtype = numba.from_dtype(user_dtype)
+        user_ndtype_p = numba.types.CPointer(user_ndtype)
+
+        func_type = numba.cffi_support.map_type(ffi.typeof('CVLsJacFn'))
+        args = list(func_type.args)
+        args[4] = user_ndtype_p
+        func_type = func_type.return_type(*args)
+
+        @numba.cfunc(func_type)
+        def jac_dense_wrapper(t, y_, fy_, out_, user_data_, tmp1_, tmp2_, tmp3_):  # type: ignore
+            n_vars = N_VGetLength(y_)
+            y_ptr = N_VGetArrayPointer(y_)
+            out_ptr = SUNSparseMatrix_Data(out_)
+            fy_ptr = N_VGetArrayPointer(fy_)
             y = numba.carray(y_ptr, (n_vars,)).view(state_dtype)[0]
             out = numba.farray(out_ptr, (n_vars, n_vars))
             fy = numba.carray(fy_ptr, (n_vars,))

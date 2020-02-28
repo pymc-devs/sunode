@@ -89,8 +89,8 @@ def check_ptr(retval: CPointer) -> CPointer:
 
 
 def check_code(retval: int) -> int:
-    if isinstance(retcode, int) and retcode != 0:
-        raise ValueError('Bad return code from sundials: %s (%s)' % (ERRORS[retcode], retcode))
+    if retval != 0:
+        raise ValueError('Bad return code from sundials: %s (%s)' % (ERRORS[retval], retval))
     return retval
 
 

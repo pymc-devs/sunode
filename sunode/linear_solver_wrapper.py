@@ -11,10 +11,10 @@ from sunode.vector import Vector
 from sunode.matrix import Matrix, Dense, Sparse, Band
 
 
-logger = logging.getLogger("sunode.linear_solver")
+logger = logging.getLogger("sunode.linear_solver_wrapper")
 
 
-class BaseLinearSolver(Borrows):
+class LinearSolver(Borrows):
     def __init__(self, c_ptr: CPointer) -> None:
         super().__init__()
         notnull(c_ptr, "Linear solver cpointer is NULL.")
@@ -78,25 +78,25 @@ class BaseLinearSolver(Borrows):
             raise ValueError("Could not initialize linear solver.")
 
 
-class LinearSolverDense(BaseLinearSolver):
+class LinearSolverDense(LinearSolver):
     def __init__(self, vector: Vector, matrix: Dense):
         c_ptr = check_ptr(lib.SUNLinSol_Dense(vector.c_ptr, matrix.c_ptr))
         super().__init__(c_ptr)
 
 
-class LinearSolverBand(BaseLinearSolver):
+class LinearSolverBand(LinearSolver):
     def __init__(self, vector: Vector, matrix: Band):
         c_ptr = check_ptr(lib.SUNLinSol_Band(vector.c_ptr, matrix.c_ptr))
         super().__init__(c_ptr)
 
 
-class LinearSolverLapackDense(BaseLinearSolver):
+class LinearSolverLapackDense(LinearSolver):
     def __init__(self, vector: Vector, matrix: Dense):
         c_ptr = check_ptr(lib.SunLinSol_LapackDense(vector.c_ptr, matrix.c_ptr))
         super().__init__(c_ptr)
 
 
-class LinearSolverKLU(BaseLinearSolver):
+class LinearSolverKLU(LinearSolver):
     def __init__(self, vector: Vector, matrix: Sparse):
         c_ptr = check_ptr(lib.SunLinSol_KLU(vector.c_ptr, matrix.c_ptr))
         self._last_nnz = matrix.nnz

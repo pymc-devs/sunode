@@ -11,3 +11,4 @@ include/sundials_include
 .ipy*
 .mypy_cache
 .hypothesis
+Untitled*.ipynb
