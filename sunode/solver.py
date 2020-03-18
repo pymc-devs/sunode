@@ -412,7 +412,7 @@ class Solver:
 class AdjointSolver:
     def __init__(self, problem, *,
                  abstol=1e-10, reltol=1e-10,
-                 checkpoint_n=1_000_000, interpolation='polynomial', constraints=None):
+                 checkpoint_n=1_000_000, interpolation='polynomial', constraints=None, solver='BDF', adjoint_solver='BDF'):
         self._problem = problem
 
         n_states, n_params = problem.n_states, problem.n_params
@@ -430,7 +430,21 @@ class AdjointSolver:
         self._rhs = problem.make_rhs()
         self._constraints = constraints
 
-        self._ode = check(lib.CVodeCreate(lib.CV_BDF))
+        if solver == 'BDF':
+            self._solver_type = lib.CV_BDF
+        elif solver == 'ADAMS':
+            self._solver_type = lib.CV_ADAMS
+        else:
+            raise ValueError(f'Unknown solver {solver}.')
+
+        if adjoint_solver == 'BDF':
+            self._adjoint_solver_type = lib.CV_BDF
+        elif adjoint_solver == 'ADAMS':
+            self._adjoint_solver_type = lib.CV_ADAMS
+        else:
+            raise ValueError(f'Unknown solver {solver}.')
+
+        self._ode = check(lib.CVodeCreate(self._solver_type))
         check(lib.CVodeInit(self._ode, rhs.cffi, 0., self._state_buffer.c_ptr))
 
         self._set_tolerances(abstol, reltol)
@@ -457,7 +471,7 @@ class AdjointSolver:
 
         # Initialized by CVodeCreateB
         backward_ode = ffi.new('int*')
-        check(lib.CVodeCreateB(self._ode, lib.CV_BDF, backward_ode))
+        check(lib.CVodeCreateB(self._ode, self._adjoint_solver_type, backward_ode))
         self._odeB = backward_ode[0]
 
         self._state_bufferB = sunode.empty_vector(self._problem.n_states)

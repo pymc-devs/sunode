@@ -12,6 +12,7 @@
 #include "sunlinsol/sunlinsol_dense.h"
 //#include "sunlinsol/sunlinsol_klu.h"
 #include "sunlinsol/sunlinsol_band.h"
+#include "sunlinsol/sunlinsol_spgmr.h"
 #include "cvodes/cvodes_ls.h"
 #include "cvodes/cvodes.h"
 #include "cvodes/cvodes_diag.h"

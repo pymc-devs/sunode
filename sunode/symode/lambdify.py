@@ -58,9 +58,9 @@ class LambdifyAST:
             
             @numba.njit(fastmath=True)
             def logaddexp(a, b):
-                min_val = fmin(a, b)
-                max_val = fmax(a, b)
-                return max_val + log1p(exp(min_val - max_val))
+                min_val = numpy.fmin(a, b)
+                max_val = numpy.fmax(a, b)
+                return max_val + numpy.log1p(numpy.exp(min_val - max_val))
 
             @numba.njit(fastmath=True)
             def CardinalBSpline(degree, t):
@@ -350,10 +350,11 @@ def simplify_multiple_exp_sum(expr, do_simplify=False, optims=None):
             sympy.codegen.rewriting.log1p_opt,
             logsumexp_2terms_opt,
         )
-    print('in simplify_multiple_exp_sum')
-    #assert expr.is_positive or expr.is_negative
-    assert ask(Q.positive(expr)) or ask(Q.negative(expr))
-    #sign = 1 if expr.is_positive else -1
+    if not (ask(Q.positive(expr)) or ask(Q.negative(expr))):
+        if expr.args:
+            return expr.func(*[simplify_multiple_exp_sum(arg, do_simplify, optims) for arg in expr.args])
+        return expr
+
     sign = 1 if ask(Q.positive(expr)) else -1
     # expand log so that the resulting expression is a sum 
     # given it is a multiplication/division before

@@ -55,6 +55,7 @@ ffibuilder.set_source(
         "sundials_sunmatrixsparse",
         "sundials_sunlinsoldense",
         "sundials_sunlinsolband",
+        "sundials_sunlinsolspgmr",
         "sundials_cvodes",
     ] + extra_libs,
     include_dirs=include,

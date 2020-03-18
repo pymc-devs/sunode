@@ -24,7 +24,8 @@ def solve_ivp(
     coords: Optional[Dict[str, pd.Index]] = None,
     make_solver=None,
     derivative_subset=None,
-    solver_kwargs=None
+    solver_kwargs=None,
+    simplify=None,
 ) -> Any:
     dtype = basic.data_dtype
     if solver_kwargs is None:
@@ -65,7 +66,7 @@ def solve_ivp(
                     derivative_subset.append(path)
 
     problem = symode.problem.SympyProblem(
-        params_dims, y0_dims, rhs, derivative_subset, coords=coords)
+        params_dims, y0_dims, rhs, derivative_subset, coords=coords, simplify=simplify)
 
     flat_tensors = as_flattened(params)
     vars = []

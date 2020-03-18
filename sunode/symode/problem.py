@@ -25,7 +25,8 @@ class SympyProblem(problem.Problem):
         states: Dict[str, Any],
         rhs_sympy: Callable[[sym.Symbol, np.ndarray, np.ndarray], Dict[str, Any]],
         derivative_params: List[Path],
-        coords: Optional[Dict[str, pd.Index]] = None
+        coords: Optional[Dict[str, pd.Index]] = None,
+        simplify: Optional[Callable[[sym.Expr], sym.Expr]] = None,
     ):
         self.params_subset = dtypesubset.DTypeSubset(
             params,
@@ -40,6 +41,10 @@ class SympyProblem(problem.Problem):
         self.state_dtype = self.state_subset.dtype
 
         self._rhs_sympy_func = rhs_sympy
+
+        if simplify is None:
+            simplify = lambda x: x
+        self._simplify = np.vectorize(simplify)
 
         def check_dtype(dtype: np.dtype, path: Optional[str] = None) -> None:
             if dtype.fields is None:
@@ -90,12 +95,19 @@ class SympyProblem(problem.Problem):
             k: v for k, v in self._sym_params.items()
             if k in self.params_subset.subset_paths
         }
-        raveled_deriv = np.concatenate([var.ravel() for var in deriv_params.values()])
+        if deriv_params:
+            raveled_deriv = np.concatenate([var.ravel() for var in deriv_params.values()])
+        else:
+            raveled_deriv = np.zeros(0)
+
         fixed_params = {
             k: v for k, v in self._sym_params.items()
             if k not in self.params_subset.subset_paths
         }
-        raveled_fixed = np.concatenate([var.ravel() for var in fixed_params.values()])
+        if fixed_params:
+            raveled_fixed = np.concatenate([var.ravel() for var in fixed_params.values()])
+        else:
+            raveled_fixed = np.zeros(0)
 
         def item_map(item: np.ndarray) -> np.ndarray:
             if hasattr(item, 'shape') and item.shape == ():
@@ -232,7 +244,7 @@ class SympyProblem(problem.Problem):
         rhs_calc = lambdify_consts(
             "_rhs",
             argnames=['time', 'state', 'params'],
-            expr=np.array(self._sym_dydt.T),
+            expr=self._simplify(np.array(self._sym_dydt.T)),
             varmap=self._varmap,
             debug=debug,
         )
@@ -254,7 +266,7 @@ class SympyProblem(problem.Problem):
         adj_calc = lambdify_consts(
             "_adj",
             argnames=['time', 'state', 'lamda', 'params'],
-            expr=self._sym_dlamdadt,
+            expr=self._simplify(self._sym_dlamdadt),
             varmap=self._varmap,
             debug=debug,
         )
@@ -274,7 +286,7 @@ class SympyProblem(problem.Problem):
         quad_calc = lambdify_consts(
             "_quad",
             argnames=['time', 'state', 'lamda', 'params'],
-            expr=self._sym_quad_rhs,
+            expr=self._simplify(self._sym_quad_rhs),
             varmap=self._varmap,
             debug=debug,
         )
@@ -294,7 +306,7 @@ class SympyProblem(problem.Problem):
         jac_calc = lambdify_consts(
             "_jac_dense",
             argnames=['time', 'state', 'params'],
-            expr=self._sym_dydt_jac,
+            expr=self._simplify(self._sym_dydt_jac),
             varmap=self._varmap,
             debug=debug,
         )
@@ -311,11 +323,34 @@ class SympyProblem(problem.Problem):
 
         return jac_dense
 
+    def make_rhs_jac_prod(self, *, debug=False):  # type: ignore
+        jacprod = self._sym_dydt_jac @ self._sym_lamda
+        calc_jac_prod = lambdify_consts(
+            "_jac_prod",
+            argnames=['lamda', 'time', 'state', 'params'],
+            expr=self._simplify(jacprod),
+            varmap=self._varmap,
+            debug=debug,
+        )
+
+        @numba.njit(inline='always')
+        def jac_prod(out, v, t, y, fy, user_data):  # type: ignore
+            params = user_data.params
+            calc_jac_prod(out, v, t, y, params)
+
+            if (~np.isfinite(out)).any():
+                user_data.error_states = y
+                return 1
+            return 0
+        
+        return jac_prod
+
+
     def make_adjoint_jac_dense(self, *, debug=False):  # type: ignore
         jac_calc = lambdify_consts(
             "_jac_dense",
             argnames=['time', 'state', 'params'],
-            expr=-self._sym_dydt_jac.T,
+            expr=self._simplify(-self._sym_dydt_jac.T),
             varmap=self._varmap,
             debug=debug,
         )
@@ -330,6 +365,28 @@ class SympyProblem(problem.Problem):
             return 0
 
         return jac_dense
+
+    def make_adjoint_jac_prod(self, *, debug=False):  # type: ignore
+        jacprod = np.array((self._sym_dydt @ self._sym_lamda).diff(self._sym_statevec))
+        calc_jac_prod = lambdify_consts(
+            "_jac_prod",
+            argnames=['lamda', 'time', 'state', 'params'],
+            expr=self._simplify(-jacprod),
+            varmap=self._varmap,
+            debug=debug,
+        )
+
+        @numba.njit(inline='always')
+        def jac_prod(out, vB, t, y, yB, fyB, user_data):  # type: ignore
+            params = user_data.params
+            calc_jac_prod(out, vB, t, y, params)
+
+            if (~np.isfinite(out)).any():
+                user_data.error_states = y
+                return 1
+            return 0
+        
+        return jac_prod
 
     def make_sensitivity_rhs1(self, *, debug=False):  # type: ignore
         funcs = []
@@ -386,7 +443,7 @@ class SympyProblem(problem.Problem):
                 self._sym_fixed,
                 self._sym_deriv,
             ],
-            expr=self._sym_rhs_sens,
+            expr=self._simplify(self._sym_rhs_sens),
             debug=debug,
         )
 

@@ -45,6 +45,9 @@ class Problem(Protocol):
     def make_adjoint_quad_rhs(self):  # type: ignore
         return NotImplemented
 
+    def make_rhs_jac_prod(self):  # type: ignore
+        return NotImplemented
+
     def make_user_data(self) -> np.ndarray:
         return np.recarray((), dtype=self.user_data_dtype)
 
@@ -406,3 +409,81 @@ class Problem(Protocol):
             return jac_dense(out, t, y, fy, user_data)
 
         return jac_dense_wrapper
+
+    def make_sundials_jac_prod(self):  # type: ignore
+        jac_prod = self.make_rhs_jac_prod()
+
+        user_dtype = self.user_data_dtype
+        state_dtype = self.state_dtype
+
+        N_VGetArrayPointer = lib.N_VGetArrayPointer
+        N_VGetLength = lib.N_VGetLength_Serial
+
+        user_ndtype = numba.from_dtype(user_dtype)
+        user_ndtype_p = numba.types.CPointer(user_ndtype)
+
+        func_type = numba.cffi_support.map_type(ffi.typeof('CVLsJacTimesVecFn'))
+        args = list(func_type.args)
+        args[-2] = user_ndtype_p
+        func_type = func_type.return_type(*args)
+
+        @numba.cfunc(func_type)
+        def jac_prod_wrapper(v_, out_, t, y_, fy_, user_data_, tmp_,):  # type: ignore
+            n_vars = N_VGetLength(v_)
+
+            v_ptr = N_VGetArrayPointer(v_)
+            out_ptr = N_VGetArrayPointer(out_)
+            y_ptr = N_VGetArrayPointer(y_)
+            fy_ptr = N_VGetArrayPointer(fy_)
+
+            v = numba.carray(v_ptr, (n_vars,))
+            y = numba.carray(y_ptr, (n_vars,)).view(state_dtype)[0]
+            out = numba.carray(out_ptr, (n_vars,))
+            fy = numba.carray(fy_ptr, (n_vars,))
+            user_data = numba.carray(user_data_, (1,), user_dtype)[0]
+            
+            return jac_prod(out, v, t, y, fy, user_data)
+
+        return jac_prod_wrapper
+
+    def make_sundials_adjoint_jac_prod(self):  # type: ignore
+        jac_prod = self.make_adjoint_jac_prod()
+
+        user_dtype = self.user_data_dtype
+        state_dtype = self.state_dtype
+
+        N_VGetArrayPointer = lib.N_VGetArrayPointer
+        N_VGetLength = lib.N_VGetLength_Serial
+
+        user_ndtype = numba.from_dtype(user_dtype)
+        user_ndtype_p = numba.types.CPointer(user_ndtype)
+
+        func_type = numba.cffi_support.map_type(ffi.typeof('CVLsJacTimesVecFnB'))
+        args = list(func_type.args)
+        args[-2] = user_ndtype_p
+        func_type = func_type.return_type(*args)
+
+        @numba.cfunc(func_type)
+        def jac_prod_wrapper(vB_, out_, t, y_, yB_, fyB_, user_data_, tmp_,):  # type: ignore
+            n_vars = N_VGetLength(y_)
+            n_varsB = N_VGetLength(vB_)
+
+            if n_vars != n_varsB:
+                return -1
+
+            vB_ptr = N_VGetArrayPointer(vB_)
+            out_ptr = N_VGetArrayPointer(out_)
+            y_ptr = N_VGetArrayPointer(y_)
+            yB_ptr = N_VGetArrayPointer(yB_)
+            fyB_ptr = N_VGetArrayPointer(fyB_)
+
+            vB = numba.carray(vB_ptr, (n_vars,))
+            out = numba.carray(out_ptr, (n_vars,))
+            y = numba.carray(y_ptr, (n_vars,)).view(state_dtype)[0]
+            yB = numba.carray(yB_ptr, (n_vars,))
+            fyB = numba.carray(fyB_ptr, (n_vars,))
+            user_data = numba.carray(user_data_, (1,), user_dtype)[0]
+            
+            return jac_prod(out, vB, t, y, yB, fyB, user_data)
+
+        return jac_prod_wrapper
