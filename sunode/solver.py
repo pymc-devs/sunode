@@ -412,7 +412,7 @@ class Solver:
 class AdjointSolver:
     def __init__(self, problem, *,
                  abstol=1e-10, reltol=1e-10,
-                 checkpoint_n=1_000_000, interpolation='polynomial', constraints=None, solver='BDF', adjoint_solver='BDF'):
+                 checkpoint_n=500_000, interpolation='polynomial', constraints=None, solver='BDF', adjoint_solver='BDF'):
         self._problem = problem
 
         n_states, n_params = problem.n_states, problem.n_params

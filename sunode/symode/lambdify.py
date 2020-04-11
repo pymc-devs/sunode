@@ -63,6 +63,14 @@ class LambdifyAST:
                 return max_val + numpy.log1p(numpy.exp(min_val - max_val))
 
             @numba.njit(fastmath=True)
+            def expit(x):
+                return 1 / (1 + numpy.exp(-x))
+
+            @numba.njit(fastmath=True)
+            def dexpit(x):
+                return expit(x) * expit(-x)
+
+            @numba.njit(fastmath=True)
             def CardinalBSpline(degree, t):
                 if degree != 4:
                     return numpy.nan
@@ -153,8 +161,9 @@ class LambdifyAST:
         )
 
     def as_module(self):
-        mod = ast.Module(body=self._body)
-        return ast.fix_missing_locations(mod)
+        module = ast.parse("")
+        module.body = self._body
+        return ast.fix_missing_locations(module)
 
     def as_string(self):
         import astor
@@ -265,6 +274,40 @@ class logaddexp(sympy.Function):
 
     def _eval_is_finite(self):
         return self.args[0].is_finite and self.args[1].is_finite
+
+
+class dexpit(sympy.Function):
+    nargs = 1
+
+    def fdiff(self, argindex=1):
+        """
+        Returns the first derivative of this function.
+        """
+        if argindex != 1:
+            x = self.args[0]
+            return dexpit(x) * (1 - 2 * expit(x))
+        else:
+            raise ArgumentIndexError(self, argindex)
+
+    def _eval_is_real(self):
+        return self.args[0].is_real
+
+
+class expit(sympy.Function):
+    nargs = 1
+
+    def fdiff(self, argindex=1):
+        """
+        Returns the first derivative of this function.
+        """
+        if argindex != 1:
+            x = self.args[0]
+            return dexpit(x)
+        else:
+            raise ArgumentIndexError(self, argindex)
+
+    def _eval_is_real(self):
+        return self.args[0].is_real
 
 
 class CardinalBSpline(sy.Function):
