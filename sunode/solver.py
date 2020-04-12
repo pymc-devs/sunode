@@ -256,7 +256,7 @@ class Solver:
         elif sens_mode == 'staggered':
             sens_mode = lib.CV_STAGGERED
         elif sens_mode == 'staggered1':
-            raise ValueError('staggered1 requires work.')
+            raise ValueError('staggered1 not implemented.')
         else:
             raise ValueError('sens_mode must be one of "simultaneous" and "staggered".')
 
@@ -264,7 +264,7 @@ class Solver:
 
         n_params = self._problem.n_params
         yS = check(lib.N_VCloneVectorArray(n_params, self._state_buffer.c_ptr))
-        vecs = [sunode.basic.Vector(yS[i]) for i in range(n_params)]
+        vecs = [sunode.vector.Vector(yS[i]) for i in range(n_params)]
         for vec in vecs:
             vec.data[:] = 0
         self._sens_buffer_array = yS
@@ -322,11 +322,11 @@ class Solver:
 
     @property
     def params_dtype(self):
-        return self.problem.params_dtype
+        return self._problem.params_dtype
 
     @property
     def derivative_params_dtype(self):
-        return self.problem.params_subset.subset_dtype
+        return self._problem.params_subset.subset_dtype
 
     @property
     def remainder_params_dtype(self):
@@ -338,25 +338,19 @@ class Solver:
     def get_params(self):
         return self._problem.extract_params(self._user_data)
 
-    def set_derivative_params(self, params):
-        self._problem.update_subset_params(self._user_data, params)
-
-    def set_remaining_params(self, params):
-        self._problem.update_remaining_params(self._user_data, params)
-
     def set_params_dict(self, params):
         data = self.get_params()
-        _from_dict(data, params)
+        self._problem.params_subset.from_dict(params, data)
         self.set_params(data)
 
     def get_params_dict(self):
         return _as_dict(self.get_params())
 
-    def set_params_array(self, params):
-        self._problem.update_changeable(self._user_data, params)
+    def set_derivative_params(self, params):
+        self._problem.update_subset_params(self._user_data, params)
 
-    def get_params_array(self, out=None):
-        return self._problem.extract_changeable(self._user_data, out=out)
+    def set_remaining_params(self, params):
+        self._problem.update_remaining_params(self._user_data, params)
 
     def solve(self, t0, tvals, y0, y_out, *, sens0=None, sens_out=None):
         if self._compute_sens and (sens0 is None or sens_out is None):
@@ -549,7 +543,7 @@ class AdjointSolver:
 
     def set_params_dict(self, params):
         data = self.get_params()
-        _from_dict(data, params)
+        self._problem.params_subset.from_dict(params, data)
         self.set_params(data)
 
     def get_params_dict(self):

@@ -118,7 +118,9 @@ class DTypeSubset:
         for name, val in dims.items():
             if isinstance(val, dict):
                 flat_sub_paths = [p[1:] for p in subset_paths if len(p) > 0 and p[0] == name]
-                sub_subset = DTypeSubset(val, flat_sub_paths, fixed_dtype=fixed_dtype, coords=coords)
+                basename = f"dim_basename_{name}"
+                sub_subset = DTypeSubset(val, flat_sub_paths, fixed_dtype=fixed_dtype,
+                                         coords=coords, dim_basename=basename)
                 coords.update(sub_subset.coords)
                 dtype.append((name, sub_subset.dtype, ()))
                 if sub_subset.subset_dtype.itemsize > 0:
@@ -158,7 +160,8 @@ class DTypeSubset:
                         length = dim
                         index = pd.RangeIndex(length, name='%s_%s_dim%s__' % (dim_basename, name, i))
                         dim_name = index.name
-                        assert dim_name not in coords
+                        if dim_name in coords:
+                            raise ValueError(f"Can not create two different dimensions with the same name: {dim_name}.")
                         coords[dim_name] = index
                     item_dims.append(dim_name)
                     shape.append(length)

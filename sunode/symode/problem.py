@@ -98,7 +98,7 @@ class SympyProblem(problem.Problem):
         if deriv_params:
             raveled_deriv = np.concatenate([var.ravel() for var in deriv_params.values()])
         else:
-            raveled_deriv = np.zeros(0)
+            raveled_deriv = np.zeros((0,))
 
         fixed_params = {
             k: v for k, v in self._sym_params.items()
@@ -107,7 +107,7 @@ class SympyProblem(problem.Problem):
         if fixed_params:
             raveled_fixed = np.concatenate([var.ravel() for var in fixed_params.values()])
         else:
-            raveled_fixed = np.zeros(0)
+            raveled_fixed = np.zeros((0,))
 
         def item_map(item: np.ndarray) -> np.ndarray:
             if hasattr(item, 'shape') and item.shape == ():
@@ -131,6 +131,10 @@ class SympyProblem(problem.Problem):
         for idxs in product(*[range(i) for i in self._sym_lamda.shape]):
             var = self._sym_lamda[idxs]
             self._varmap[var.name] = ('lamda', idxs)
+        
+        for idxs in product(*[range(i) for i in self._sym_sens.shape]):
+            var = self._sym_sens[idxs]
+            self._varmap[var.name] = ('sens', idxs)
 
         self._sym_dydt_jac = np.array(dydt.jacobian(self._sym_statevec))
         self._sym_dydp = np.array(dydt.jacobian(self._sym_deriv_paramsvec))
@@ -433,49 +437,31 @@ class SympyProblem(problem.Problem):
         return wrapper
 
     def make_sensitivity_rhs(self, *, debug=False):  # type: ignore
-        sens_pre, sens_calc = lambdify_consts(
-            "_sens",
-            const_args=[],
-            var_args=[
-                self._sym_time,
-                self._sym_statevec,
-                self._sym_sens,
-                self._sym_fixed,
-                self._sym_deriv,
-            ],
-            expr=self._simplify(self._sym_rhs_sens),
+        jacprotsens = self._sym_dydt_jac @ self._sym_sens.T
+        sym_rhs_sens = (jacprotsens + self._sym_dydp).T
+        sens_calc = lambdify_consts(
+            "_quad",
+            argnames=['time', 'state', 'sens', 'params'],
+            expr=self._simplify(sym_rhs_sens),
+            varmap=self._varmap,
             debug=debug,
         )
-
         n_params = self.n_params
 
         @numba.njit(inline='always')
         def wrapper(out, t, y, yS, user_data):  # type: ignore
-            fixed = user_data.fixed_params
-            changeable = user_data.changeable_params
+            params = user_data.params
 
-            out_array = user_data.tmp_nparams_nstates
-            yS_array = user_data.tmp2_nparams_nstates
-            for i in range(n_params):
-                yS_array[i, :] = yS[i]
-
-            pre = sens_pre()
             sens_calc(
-                out_array,
-                pre,
+                out,
                 t,
-                y.reshape((1, -1)),
-                yS_array,
-                fixed.reshape((1, -1)),
-                changeable.reshape((1, -1)),
+                y,
+                yS,
+                params,
             )
 
             if (~np.isfinite(out)).any():
                 return 1
 
-            for i in range(n_params):
-                out[i][:] = out_array[i, :]
-
             return 0
-
         return wrapper

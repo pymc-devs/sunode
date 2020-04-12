@@ -269,6 +269,7 @@ class Problem(Protocol):
         N_VGetArrayPointer_Serial = lib.N_VGetArrayPointer_Serial
         N_VGetLength_Serial = lib.N_VGetLength_Serial
 
+        state_dtype = self.state_dtype
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
 
@@ -283,27 +284,27 @@ class Problem(Protocol):
         ):
             n_vars = N_VGetLength_Serial(y_)
             y_ptr = N_VGetArrayPointer_Serial(y_)
-            y = numba.carray(y_ptr, (n_vars,))
+            y = numba.carray(y_ptr, (n_vars,)).view(state_dtype)[0]
 
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
 
-            yS = []
-            out = []
+            out_array = user_data.tmp_nparams_nstates
+            yS_array = user_data.tmp2_nparams_nstates
             for i in range(n_params):
                 yS_i_ptr = N_VGetArrayPointer_Serial(yS_[i])
                 yS_i = numba.carray(yS_i_ptr, (n_vars,))
-                yS.append(yS_i)
+                yS_array[i, :] = yS_i
+
+            retcode = sens_rhs(out_array, t, y, yS_array, user_data)
+            if retcode != 0:
+                return retcode
+
+            for i in range(n_params):
                 out_i_ptr = N_VGetArrayPointer_Serial(out_[i])
                 out_i = numba.carray(out_i_ptr, (n_vars,))
-                out.append(out_i)
+                out_i[:] = out_array[i, :]
 
-            return sens_rhs(
-                out,
-                t,
-                y,
-                yS,
-                user_data,
-            )
+            return retcode
 
         return sens_rhs_wrapper
 

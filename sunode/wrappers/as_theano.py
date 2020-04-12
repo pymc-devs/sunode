@@ -31,9 +31,13 @@ def solve_ivp(
     if solver_kwargs is None:
         solver_kwargs={}
 
-    def read_dict(vals):
+    if derivatives == "forward":
+        params = params.copy()
+        params["__initial_values"] = y0
+
+    def read_dict(vals, name=None):
         if isinstance(vals, dict):
-            return {name: read_dict(item) for name, item in vals.items()}
+            return {name: read_dict(item, name) for name, item in vals.items()}
         else:
             if isinstance(vals, tuple):
                 tensor, dim_names = vals
@@ -47,8 +51,17 @@ def solve_ivp(
             if isinstance(dim_names, (str, int)):
                 dim_names = (dim_names,)
             tensor = tt.as_tensor_variable(tensor)
-            assert tensor.ndim == len(dim_names)
+            if tensor.ndim != len(dim_names):
+                raise ValueError(
+                    f"Dimension mismatch for {name}: Value has rank {tensor.ndim}, "
+                    f"but {len(dim_names)} was specified."
+                )
             assert np.dtype(tensor.dtype) == dtype, tensor
+            tensor_dtype = np.dtype(tensor.dtype)
+            if tensor_dtype != dtype:
+                raise ValueError(
+                    f"Dtype mismatch for {name}: Got {tensor_dtype} but expected {dtype}."
+                )
             return dim_names
 
     y0_dims = read_dict(y0)
@@ -107,9 +120,11 @@ def solve_ivp(
         solution = problem.flat_solution_as_dict(flat_solution)
         return solution, flat_solution, problem, sol, y0_flat, params_subs_flat
     elif derivatives == 'forward':
-        sol = solver.Solver(problem)
-        wrapper = sol.SolveODE(sol, t0, tvals)
-        return wrapper(y0_flat, params_subs_flat, params_remaining_flat)[0], problem, sol
+        sol = solver.Solver(problem, **solver_kwargs)
+        wrapper = SolveODE(sol, t0, tvals)
+        flat_solution, flat_sens = wrapper(y0_flat, params_subs_flat, params_remaining_flat)
+        solution = problem.flat_solution_as_dict(flat_solution)
+        return solution, flat_solution, problem, sol, y0_flat, params_subs_flat, flat_sens, wrapper
     elif derivatives in [None, False]:
         sol = solver.Solver(problem, sens_mode=False)
         assert False
@@ -131,13 +146,45 @@ class SolveODE(tt.Op):
         self._deriv_dtype = self._solver.derivative_params_dtype
         self._fixed_dtype = self._solver.remainder_params_dtype
 
+        n_states, n_params = self._solver._problem.n_states, self._solver._problem.n_params
+        problem = self._solver._problem
+
+        def get(val, path):
+            if not path:
+                return val
+            else:
+                key, *path = path
+                return get(val[key], path)
+
+        sens0 = []
+        for path, shape in problem.params_subset.flat_shapes.items():
+            if path not in problem.params_subset.subset_paths:
+                continue
+            n_items = np.prod(shape, dtype=int)
+
+            sens0_item = np.zeros((n_items,), dtype=problem.state_dtype)
+            if path and path[0] == '__initial_values':
+                _, *path = path
+
+                if shape == ():
+                    subset = get(sens0_item[0], path[:-1])
+                    subset[path[-1]] = 1.
+                else:
+                    for i in range(n_items):
+                        subset = get(sens0_item[i], path)
+                        subset.ravel()[i] = 1.
+            sens0.extend(sens0_item)
+        sens0 = np.array(sens0).view(np.float64)
+        self._sens0 = sens0.reshape((n_params, n_states))
+
     def perform(self, node, inputs, outputs):
         y0, params, params_fixed = inputs
 
         self._solver.set_derivative_params(params.view(self._deriv_dtype)[0])
         self._solver.set_remaining_params(params_fixed.view(self._fixed_dtype)[0])
+
         self._solver.solve(self._t0, self._tvals, y0, self._y_out,
-                           sens0=sens0, sens_out=self._sens_out)
+                           sens0=self._sens0, sens_out=self._sens_out)
         outputs[0][0] = self._y_out
         outputs[1][0] = self._sens_out
 
@@ -145,9 +192,12 @@ class SolveODE(tt.Op):
         g, g_grad = g
         
         assert str(g_grad) == '<DisconnectedType>'
-        params, = inputs
-        solution, sens = self(params)
-        return [tt.sum(g[:, None, :] * sens, (0, -1))]
+        solution, sens = self(*inputs)
+        return [
+            tt.zeros_like(inputs[0]),
+            tt.sum(g[:, None, :] * sens, (0, -1)),
+            tt.grad_not_implemented(self, 2, inputs[-1])
+        ]
 
 
 class SolveODEAdjoint(tt.Op):
