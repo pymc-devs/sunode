@@ -79,7 +79,7 @@ class LambdifyAST:
         ))
         self._body.extend(imports.body)
         
-    def add_var_function(self, outname, argnames, varmap, assigns, expr):
+    def add_var_function(self, outname, argnames, varmap, assigns, expr, add_to_out=False):
         if outname in argnames:
             raise ValueError('Invalid variable name: %s' % outname)
 
@@ -100,14 +100,15 @@ class LambdifyAST:
         func.body = body
 
         # Write zeros to output
-        body.append(ast.Assign(
-            targets=[ast.Subscript(
-                value=ast.Name(id=outname, ctx=ast.Load()),
-                slice=ast.Slice(lower=None, upper=None, step=None),
-                ctx=ast.Store(),
-            )],
-            value=ast.Num(n=0)
-        ))
+        if not add_to_out:
+            body.append(ast.Assign(
+                targets=[ast.Subscript(
+                    value=ast.Name(id=outname, ctx=ast.Load()),
+                    slice=ast.Slice(lower=None, upper=None, step=None),
+                    ctx=ast.Store(),
+                )],
+                value=ast.Num(n=0)
+            ))
 
         # Prepare local variables from cse
         for name, value in assigns:
@@ -120,7 +121,10 @@ class LambdifyAST:
             value = expr[idxs]
             if value == 0:
                 continue
-            body.append(self._as_assign(value, outname, idxs))
+            if add_to_out:
+                body.append(self._as_add_to(value, outname, idxs))
+            else:
+                body.append(self._as_assign(value, outname, idxs))
 
         path_as_ast = self._path_as_ast
         class Trafo(ast.NodeTransformer):
@@ -160,6 +164,14 @@ class LambdifyAST:
             value=value,
         )
 
+    def _as_add_to(self, expr, leftname, *leftpath):
+        value = self._sympy_as_ast(expr)
+        return ast.AugAssign(
+            target=self._path_as_ast(leftname, *leftpath, as_store=True),
+            value=value,
+            op=ast.Add(),
+        )
+
     def as_module(self):
         module = ast.parse("")
         module.body = self._body
@@ -185,7 +197,7 @@ class AstLoader(importlib.abc.InspectLoader):
         return self.source_to_code(self._asts[fullname])
 
     
-def lambdify_consts(module_name, argnames, expr, varmap, debug=False):
+def lambdify_consts(module_name, argnames, expr, varmap, add_to_out=False, debug=False):
     """Compile a sympy expression using numba.
     
     Split the expression into two functions: one, that precomputes
@@ -242,7 +254,7 @@ def lambdify_consts(module_name, argnames, expr, varmap, debug=False):
 
     lam = LambdifyAST()
     lam.add_imports()
-    lam.add_var_function('_out', argnames, varmap, assigns, expr)
+    lam.add_var_function('_out', argnames, varmap, assigns, expr, add_to_out)
     mod = lam.as_module()
     if debug:
         print(lam.as_string())

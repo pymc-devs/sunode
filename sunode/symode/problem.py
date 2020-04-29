@@ -137,6 +137,7 @@ class SympyProblem(problem.Problem):
             self._varmap[var.name] = ('sens', idxs)
 
         self._sym_dydt_jac = np.array(dydt.jacobian(self._sym_statevec))
+        #self._sym_dydp = np.array([val.diff(self._sym_deriv_paramsvec) for val in self._sym_dydt])
         self._sym_dydp = np.array(dydt.jacobian(self._sym_deriv_paramsvec))
         #jacprotsens = (self._sym_dydt_jac * self._sym_sens.T.as_explicit()).as_explicit()
         #self._sym_rhs_sens = (jacprotsens + self._sym_dydp).as_explicit().T
@@ -145,6 +146,7 @@ class SympyProblem(problem.Problem):
 
         self.user_data_dtype = np.dtype([
             ('params', self.params_subset.dtype),
+            ('tmp_nstates_nstates', np.float64, (self.n_states, self.n_states)),
             ('tmp_nparams_nstates', np.float64, (self.n_params, self.n_states)),
             ('tmp2_nparams_nstates', np.float64, (self.n_params, self.n_states)),
             ('error_states', self.state_dtype),
@@ -436,11 +438,11 @@ class SympyProblem(problem.Problem):
 
         return wrapper
 
-    def make_sensitivity_rhs(self, *, debug=False):  # type: ignore
+    def make_sensitivity_rhs_explicit(self, *, debug=False):  # type: ignore
         jacprotsens = self._sym_dydt_jac @ self._sym_sens.T
         sym_rhs_sens = (jacprotsens + self._sym_dydp).T
         sens_calc = lambdify_consts(
-            "_quad",
+            "_sens_rhs_explicit",
             argnames=['time', 'state', 'sens', 'params'],
             expr=self._simplify(sym_rhs_sens),
             varmap=self._varmap,
@@ -460,6 +462,62 @@ class SympyProblem(problem.Problem):
                 params,
             )
 
+            if (~np.isfinite(out)).any():
+                return 1
+
+            return 0
+        return wrapper
+
+    def make_sensitivity_rhs(self, *, debug=False):  # type: ignore
+        jac_dense = self.make_jac_dense()
+        dydp = lambdify_consts(
+            "_sens_rhs",
+            argnames=['time', 'state', 'params'],
+            expr=self._simplify(self._sym_dydp.T),
+            varmap=self._varmap,
+            add_to_out=True,
+            debug=debug,
+        )
+
+        @numba.njit(inline='always')
+        def wrapper(out, t, y, yS, user_data):  # type: ignore
+            params = user_data.params
+
+            jac = user_data.tmp_nstates_nstates
+            retcode = jac_dense(jac, t, y, None, user_data)
+            if retcode != 0:
+                return retcode
+
+            np.dot(yS, jac.T, out=out)
+            dydp(out, t, y, params)
+            if (~np.isfinite(out)).any():
+                return 1
+
+            return 0
+        return wrapper
+
+    def make_sensitivity_rhs_(self, *, debug=False):  # type: ignore
+        jac_dense = self.make_rhs_jac_prod()
+        dydp = lambdify_consts(
+            "_sens_rhs",
+            argnames=['time', 'state', 'params'],
+            expr=self._simplify(self._sym_dydp.T),
+            varmap=self._varmap,
+            add_to_out=True,
+            debug=debug,
+        )
+
+        @numba.njit(inline='always')
+        def wrapper(out, t, y, yS, user_data):  # type: ignore
+            params = user_data.params
+
+            jac = user_data.tmp_nstates_nstates
+            retcode = jac_dense(jac, t, y, None, user_data)
+            if retcode != 0:
+                return retcode
+
+            np.dot(yS, jac.T, out=out)
+            dydp(out, t, y, params)
             if (~np.isfinite(out)).any():
                 return 1
 

@@ -183,10 +183,15 @@ class SolveODE(tt.Op):
         self._solver.set_derivative_params(params.view(self._deriv_dtype)[0])
         self._solver.set_remaining_params(params_fixed.view(self._fixed_dtype)[0])
 
-        self._solver.solve(self._t0, self._tvals, y0, self._y_out,
-                           sens0=self._sens0, sens_out=self._sens_out)
-        outputs[0][0] = self._y_out
-        outputs[1][0] = self._sens_out
+        try:
+            self._solver.solve(self._t0, self._tvals, y0, self._y_out,
+                            sens0=self._sens0, sens_out=self._sens_out)
+        except SolverError:
+            self._y_out[...] = np.nan
+            self._sens_out[...] = np.nan
+        
+        outputs[0][0] = self._y_out.copy()
+        outputs[1][0] = self._sens_out.copy()
 
     def grad(self, inputs, g):
         g, g_grad = g

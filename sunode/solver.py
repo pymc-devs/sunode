@@ -352,7 +352,7 @@ class Solver:
     def set_remaining_params(self, params):
         self._problem.update_remaining_params(self._user_data, params)
 
-    def solve(self, t0, tvals, y0, y_out, *, sens0=None, sens_out=None):
+    def solve(self, t0, tvals, y0, y_out, *, sens0=None, sens_out=None, max_retries=5):
         if self._compute_sens and (sens0 is None or sens_out is None):
             raise ValueError('"sens_out" and "sens0" are required when computin sensitivities.')
         CVodeReInit = lib.CVodeReInit
@@ -389,18 +389,24 @@ class Solver:
                     sens_out[0, :, :] = sens0
                 continue
 
-            retval = TOO_MUCH_WORK
-            while retval == TOO_MUCH_WORK:
+            for retry in range(max_retries):
                 retval = CVode(ode, t, state_c_ptr, time_p, lib.CV_NORMAL)
-                if retval != TOO_MUCH_WORK and retval != 0:
-                    raise SolverError("Bad sundials return code while solving ode: %s (%s)"
-                                      % (ERRORS[retval], retval))
+                if retval == 0:
+                    assert time_p[0] == t
+                    break
+                if retval != TOO_MUCH_WORK:
+                    error = ERRORS[retval]
+                    raise SolverError(f"Solving ode failed before time={t}: {error} ({retval})")
+            else:
+                raise SolverError(f"Too many solver retries before time={t}.")
+
             y_out[i, :] = state_data
 
             if self._compute_sens:
-                check(CVodeGetSens(ode, time_p, sens_buffer_array))
-                for j in range(n_params):
-                    sens_out[i, j, :] = sens_data[j]
+                retval = CVodeGetSens(ode, time_p, sens_buffer_array)
+                if retval == 0:
+                    for j in range(n_params):
+                        sens_out[i, j, :] = sens_data[j]
 
 
 class AdjointSolver:
