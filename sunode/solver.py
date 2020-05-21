@@ -211,7 +211,7 @@ class Solver:
     def __init__(self, problem: Problem, *,
                  compute_sens: bool = False, abstol: float = 1e-10, reltol: float = 1e-10,
                  sens_mode: Optional[str] = None, scaling_factors: Optional[np.ndarray] = None,
-                 constraints: Optional[np.ndarray] = None):
+                 constraints: Optional[np.ndarray] = None, solver='BDF'):
         self._problem = problem
         self._user_data = problem.make_user_data()
 
@@ -223,7 +223,13 @@ class Solver:
         self._jac = check(lib.SUNDenseMatrix(n_states, n_states))
         self._constraints = constraints
 
-        self._ode = check(lib.CVodeCreate(lib.CV_BDF))
+        if solver == 'BDF':
+            solver_kind = lib.CV_BDF
+        elif solver == 'ADAMS':
+            solver_kind = lib.CV_ADAMS
+        else:
+            assert False
+        self._ode = check(lib.CVodeCreate(solver_kind))
         rhs = problem.make_sundials_rhs()
         check(lib.CVodeInit(self._ode, rhs.cffi, 0., self._state_buffer.c_ptr))
 
