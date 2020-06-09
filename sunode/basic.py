@@ -1,19 +1,27 @@
 from __future__ import annotations
 
-import sys
-import weakref
 import logging
-from typing import Optional, Tuple, Union, NewType, List, Any, cast, TextIO, Callable
+from typing import (
+    Optional,
+    Union,
+    NewType,
+    List,
+    Any,
+    Callable
+)
+
 
 import numpy as np  # type: ignore
-from scipy import sparse  # type: ignore
 import numba  # type: ignore
-import numba.cffi_support  # type: ignore
+from numba.core.typing import cffi_utils  # type: ignore
 
 from sunode import _cvodes
 
 
-__all__ = ["lib", "ffi", "ERRORS", "Borrows", "notnull", "check", "check_ptr", "check_code", "as_numpy"]
+__all__ = [
+    "lib", "ffi", "ERRORS", "Borrows", "notnull",
+    "check", "check_ptr", "check_code", "as_numpy"
+]
 
 
 logger = logging.getLogger("sunode.basic")
@@ -21,16 +29,16 @@ logger = logging.getLogger("sunode.basic")
 lib: Any = _cvodes.lib
 ffi: Any = _cvodes.ffi
 
-numba.cffi_support.register_module(_cvodes)
-numba.cffi_support.register_type(
+cffi_utils.register_module(_cvodes)
+cffi_utils.register_type(
     ffi.typeof("N_Vector").item, numba.types.Opaque("N_Vector")
 )
-numba.cffi_support.register_type(
+cffi_utils.register_type(
     ffi.typeof("SUNMatrix").item, numba.types.Opaque("SUNMatrix")
 )
 
-_data_dtype = numba.cffi_support.map_type(ffi.typeof("realtype"))
-_index_dtype = numba.cffi_support.map_type(ffi.typeof("sunindextype"))
+_data_dtype = cffi_utils.map_type(ffi.typeof("realtype"))
+_index_dtype = cffi_utils.map_type(ffi.typeof("sunindextype"))
 data_dtype: Any = np.dtype(_data_dtype.name)
 index_dtype: Any = np.dtype(_index_dtype.name)
 
@@ -56,6 +64,7 @@ class Borrows:
 
     def release_borrowed_func(self) -> Callable[[], None]:
         borrowed = self._borrowed
+
         # Does not keep a reference to self
         def release() -> None:
             borrowed.clear()

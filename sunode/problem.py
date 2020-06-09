@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Union, TypeVar, Tuple, Callable, Any, Optional, Dict
+from typing import Any, Optional, Dict
 from typing_extensions import Protocol
 
 import numba
 import numpy as np
 
-from sunode.matrix import Matrix, Dense, Sparse, Band
+from sunode.matrix import Sparse
 from sunode.basic import lib, ffi
 from sunode.dtypesubset import as_nested, DTypeSubset
 
@@ -159,7 +159,7 @@ class Problem(Protocol):
         user_dtype = self.user_data_dtype
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
-        func_type = numba.cffi_support.map_type(ffi.typeof('CVRhsFn'))
+        func_type = numba.core.typing.cffi_utils.map_type(ffi.typeof('CVRhsFn'))
         func_type = func_type.return_type(*(func_type.args[:-1] + (user_ndtype_p,)))
 
         @numba.cfunc(func_type)
@@ -187,7 +187,7 @@ class Problem(Protocol):
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
 
-        func_type = numba.cffi_support.map_type(ffi.typeof('CVRhsFnB'))
+        func_type = numba.core.typing.cffi_utils.map_type(ffi.typeof('CVRhsFnB'))
         args = list(func_type.args)
         args[-1] = user_ndtype_p
         func_type = func_type.return_type(*args)
@@ -203,10 +203,6 @@ class Problem(Protocol):
 
             yBdot_ptr = N_VGetArrayPointer_Serial(yBdot_)
             yBdot = numba.carray(yBdot_ptr, (n_vars,))
-
-            #print(n_vars)
-            #print(N_VGetLength_Serial(yB_))
-            #print(N_VGetLength_Serial(yBdot_))
 
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
 
@@ -231,7 +227,7 @@ class Problem(Protocol):
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
 
-        func_type = numba.cffi_support.map_type(ffi.typeof('CVQuadRhsFnB'))
+        func_type = numba.core.typing.cffi_utils.map_type(ffi.typeof('CVQuadRhsFnB'))
         args = list(func_type.args)
         args[-1] = user_ndtype_p
         func_type = func_type.return_type(*args)
@@ -273,7 +269,7 @@ class Problem(Protocol):
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
 
-        func_type = numba.cffi_support.map_type(ffi.typeof('CVSensRhsFn'))
+        func_type = numba.core.typing.cffi_utils.map_type(ffi.typeof('CVSensRhsFn'))
         args = list(func_type.args)
         args[-3] = user_ndtype_p
         func_type = func_type.return_type(*args)
@@ -320,7 +316,7 @@ class Problem(Protocol):
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
 
-        func_type = numba.cffi_support.map_type(ffi.typeof('CVLsJacFnB'))
+        func_type = numba.core.typing.cffi_utils.map_type(ffi.typeof('CVLsJacFnB'))
         args = list(func_type.args)
         args[5] = user_ndtype_p
         func_type = func_type.return_type(*args)
@@ -341,7 +337,7 @@ class Problem(Protocol):
             out = numba.farray(out_ptr, (n_lamda, n_lamda))
 
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
-            
+
             return jac_dense(out, t, y, yB, fyB, user_data)
 
         return jac_dense_wrapper
@@ -358,7 +354,7 @@ class Problem(Protocol):
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
 
-        func_type = numba.cffi_support.map_type(ffi.typeof('CVLsJacFn'))
+        func_type = numba.core.typing.cffi_utils.map_type(ffi.typeof('CVLsJacFn'))
         args = list(func_type.args)
         args[4] = user_ndtype_p
         func_type = func_type.return_type(*args)
@@ -373,7 +369,7 @@ class Problem(Protocol):
             out = numba.farray(out_ptr, (n_vars, n_vars))
             fy = numba.carray(fy_ptr, (n_vars,))
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
-            
+
             return jac_dense(out, t, y, fy, user_data)
 
         return jac_dense_wrapper
@@ -391,7 +387,7 @@ class Problem(Protocol):
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
 
-        func_type = numba.cffi_support.map_type(ffi.typeof('CVLsJacFn'))
+        func_type = numba.core.typing.cffi_utils.map_type(ffi.typeof('CVLsJacFn'))
         args = list(func_type.args)
         args[4] = user_ndtype_p
         func_type = func_type.return_type(*args)
@@ -406,8 +402,8 @@ class Problem(Protocol):
             out = numba.farray(out_ptr, (n_vars, n_vars))
             fy = numba.carray(fy_ptr, (n_vars,))
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
-            
-            return jac_dense(out, t, y, fy, user_data)
+
+            return jac_sparse(out, t, y, fy, user_data)
 
         return jac_dense_wrapper
 
@@ -423,7 +419,7 @@ class Problem(Protocol):
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
 
-        func_type = numba.cffi_support.map_type(ffi.typeof('CVLsJacTimesVecFn'))
+        func_type = numba.core.typing.cffi_utils.map_type(ffi.typeof('CVLsJacTimesVecFn'))
         args = list(func_type.args)
         args[-2] = user_ndtype_p
         func_type = func_type.return_type(*args)
@@ -442,7 +438,7 @@ class Problem(Protocol):
             out = numba.carray(out_ptr, (n_vars,))
             fy = numba.carray(fy_ptr, (n_vars,))
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
-            
+
             return jac_prod(out, v, t, y, fy, user_data)
 
         return jac_prod_wrapper
@@ -459,7 +455,7 @@ class Problem(Protocol):
         user_ndtype = numba.from_dtype(user_dtype)
         user_ndtype_p = numba.types.CPointer(user_ndtype)
 
-        func_type = numba.cffi_support.map_type(ffi.typeof('CVLsJacTimesVecFnB'))
+        func_type = numba.core.typing.cffi_utils.map_type(ffi.typeof('CVLsJacTimesVecFnB'))
         args = list(func_type.args)
         args[-2] = user_ndtype_p
         func_type = func_type.return_type(*args)
@@ -484,7 +480,7 @@ class Problem(Protocol):
             yB = numba.carray(yB_ptr, (n_vars,))
             fyB = numba.carray(fyB_ptr, (n_vars,))
             user_data = numba.carray(user_data_, (1,), user_dtype)[0]
-            
+
             return jac_prod(out, vB, t, y, yB, fyB, user_data)
 
         return jac_prod_wrapper

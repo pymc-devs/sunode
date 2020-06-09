@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import sys
+
 from cffi import FFI  # type: ignore
 import glob
 import os
@@ -25,7 +27,6 @@ with open(os.path.join(base, "source_cvodes.c")) as fsource:
     content = fsource.read()
 
 
-import sys
 if sys.platform == 'win32':
     include = [os.path.join(os.environ["CONDA_PREFIX"], "Library", "include")]
     library_dirs = [
@@ -34,7 +35,7 @@ if sys.platform == 'win32':
     extra_libs = []
 else:
     include = [os.path.join(os.environ["CONDA_PREFIX"], "include")]
-    library_dirs = []
+    library_dirs = [os.path.join(os.environ["CONDA_PREFIX"], "lib")]
     extra_libs = [
         "blas",
         "lapack",

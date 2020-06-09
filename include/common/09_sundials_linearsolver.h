@@ -110,22 +110,22 @@ int SUNLinSolFree(SUNLinearSolver S);
 
 #define SUNLS_SUCCESS               0   /* successful/converged          */
 
-#define SUNLS_MEM_NULL           -801   /* mem argument is NULL          */
-#define SUNLS_ILL_INPUT          -802   /* illegal function input        */
-#define SUNLS_MEM_FAIL           -803   /* failed memory access          */
-#define SUNLS_ATIMES_FAIL_UNREC  -804   /* atimes unrecoverable failure  */
-#define SUNLS_PSET_FAIL_UNREC    -805   /* pset unrecoverable failure    */
-#define SUNLS_PSOLVE_FAIL_UNREC  -806   /* psolve unrecoverable failure  */
-#define SUNLS_PACKAGE_FAIL_UNREC -807   /* external package unrec. fail  */
-#define SUNLS_GS_FAIL            -808   /* Gram-Schmidt failure          */
-#define SUNLS_QRSOL_FAIL         -809   /* QRsol found singular R        */
-#define SUNLS_VECTOROP_ERR       -810   /* vector operation error        */
+#define SUNLS_MEM_NULL           ...   /* mem argument is NULL          */
+#define SUNLS_ILL_INPUT          ...   /* illegal function input        */
+#define SUNLS_MEM_FAIL           ...   /* failed memory access          */
+#define SUNLS_ATIMES_FAIL_UNREC  ...   /* atimes unrecoverable failure  */
+#define SUNLS_PSET_FAIL_UNREC    ...   /* pset unrecoverable failure    */
+#define SUNLS_PSOLVE_FAIL_UNREC  ...   /* psolve unrecoverable failure  */
+#define SUNLS_PACKAGE_FAIL_UNREC ...   /* external package unrec. fail  */
+#define SUNLS_GS_FAIL            ...   /* Gram-Schmidt failure          */
+#define SUNLS_QRSOL_FAIL         ...   /* QRsol found singular R        */
+#define SUNLS_VECTOROP_ERR       ...   /* vector operation error        */
 
-#define SUNLS_RES_REDUCED         801   /* nonconv. solve, resid reduced */
-#define SUNLS_CONV_FAIL           802   /* nonconvergent solve           */
-#define SUNLS_ATIMES_FAIL_REC     803   /* atimes failed recoverably     */
-#define SUNLS_PSET_FAIL_REC       804   /* pset failed recoverably       */
-#define SUNLS_PSOLVE_FAIL_REC     805   /* psolve failed recoverably     */
-#define SUNLS_PACKAGE_FAIL_REC    806   /* external package recov. fail  */
-#define SUNLS_QRFACT_FAIL         807   /* QRfact found singular matrix  */
-#define SUNLS_LUFACT_FAIL         808   /* LUfact found singular matrix  */
+#define SUNLS_RES_REDUCED         ...  /* nonconv. solve, resid reduced */
+#define SUNLS_CONV_FAIL           ...  /* nonconvergent solve           */
+#define SUNLS_ATIMES_FAIL_REC     ...  /* atimes failed recoverably     */
+#define SUNLS_PSET_FAIL_REC       ...  /* pset failed recoverably       */
+#define SUNLS_PSOLVE_FAIL_REC     ...  /* psolve failed recoverably     */
+#define SUNLS_PACKAGE_FAIL_REC    ...  /* external package recov. fail  */
+#define SUNLS_QRFACT_FAIL         ...  /* QRfact found singular matrix  */
+#define SUNLS_LUFACT_FAIL         ...  /* LUfact found singular matrix  */

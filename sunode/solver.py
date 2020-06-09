@@ -147,6 +147,8 @@ class BaseSolver(Borrows):
         state_data = self._state_buffer.data
         state_c_ptr = self._state_buffer.c_ptr
 
+        if y0.dtype == self._problem.state_dtype:
+            y0 = y0[None].view(np.float64)
         state_data[:] = y0
 
         time_p = ffi.new('double*')
@@ -285,7 +287,7 @@ class Solver:
             NULL_D = ffi.cast('double *', 0)
             NULL_I = ffi.cast('int *', 0)
             pbar_p = ffi.cast('double *', ffi.addressof(ffi.from_buffer(scaling_factors.data)))
-            check(lib.CVodeSetSensParams(ode, NULL_D, pbar_p, NULL_I))
+            check(lib.CVodeSetSensParams(self._ode, NULL_D, pbar_p, NULL_I))
 
         check(lib.CVodeSensEEtolerances(self._ode))  # TODO
         check(lib.CVodeSetSensErrCon(self._ode, 1))  # TODO
@@ -379,6 +381,8 @@ class Solver:
             for i in range(n_params):
                 sens_data[i][:] = sens0[i, :]
 
+        if y0.dtype == self._problem.state_dtype:
+            y0 = y0[None].view(np.float64)
         state_data[:] = y0
 
         time_p = ffi.new('double*')
@@ -577,6 +581,8 @@ class AdjointSolver:
         state_data = self._state_buffer.data
         state_c_ptr = self._state_buffer.c_ptr
 
+        if y0.dtype == self._problem.state_dtype:
+            y0 = y0[None].view(np.float64)
         state_data[:] = y0
 
         time_p = ffi.new('double*')
