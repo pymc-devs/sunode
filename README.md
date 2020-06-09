@@ -17,7 +17,7 @@ sunode comes with a theano wrapper so that parameters of an ode can be estimated
 using pymc3.
 
 ### Installation
-```
+```bash
 git clone git@github.com:aseyboldt/sunode
 cd sunode
 conda create -n sunode -c conda-forge python numba pymc3 sympy pandas xarray sundials
@@ -34,7 +34,7 @@ $$
 \freq{dL}{dt} = \delta LH - \gamma L
 $$
 
-```
+```python
 def lotka_volterra(t, y, p):
     """Right hand side of Lotka-Volterra equation.
 
