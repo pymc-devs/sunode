@@ -3,7 +3,7 @@ but I do not consider the API stable yet. There isn't a whole lot
 of documentation either, but feel free to ask in an issue if you
 feel like playing with it.
 
-# Sunode - Solving ODEs in python
+# Sunode – Solving ODEs in python
 
 Sunode wraps the sundials solvers ADAMS and BDF, and their support for solving
 adjoint ODEs in order to compute gradients of the solutions.  The required
