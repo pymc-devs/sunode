@@ -52,9 +52,18 @@ jobs:
         which python
     - name: Download sundials
       run: git clone https://github.com/conda-forge/sundials-feedstock.git
-    - name: Create environment for builds & installation
+    - name: Install build and test dependencies
       run: |
-        conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels
+        conda install conda-build
+    - name: Install build and test dependencies 2
+      run: |
+        conda install conda-verify
+    - name: Install build and test dependencies 3
+      run: |
+        conda install coverage pytest pytest-cov
+    - name: Install build and test dependencies 
+      run: |
+        conda install hypothesis statsmodels
     - name: Build sundials
       run: conda build .\sundials-feedstock\recipe
     - name: Build sunode
