@@ -54,10 +54,10 @@ jobs:
         conda create -n sunode-env -c conda-forge python=${{ matrix.python-version }} conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels
         activate sunode-env
     - name: Build sundials
-      run: conda build -c conda-forge ./sundials-feedstock/recipe
+      run: conda build -c conda-forge .\sundials-feedstock\recipe
     - name: Build sunode
       run: |
-        conda build -c local -c conda-forge ./conda
+        conda build -c local -c conda-forge .\conda
     - name: Install sundials into the environment
       run: |
         conda install -c local -c conda-forge sundials
