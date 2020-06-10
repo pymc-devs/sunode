@@ -25,6 +25,8 @@ conda activate sunode
 pip install -e .
 ```
 
+Installation instructions for windows can be found [here](https://gist.github.com/michaelosthege/5bd75c99cd5e806ee049b02ed528bab3).
+
 ### Solve an ode outside of a pymc3 model
 
 We will use the Lotka-Volterra equations as an example ODE:

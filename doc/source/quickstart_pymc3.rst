@@ -27,6 +27,9 @@ To build and install a conda package locally, we clone the repo as above, and th
     # Install it into a new environment:
     conda create -n sunode -c local -c conda-forge sunode
 
+Instructions for installation on Windows can be found
+`here <https://gist.github.com/michaelosthege/5bd75c99cd5e806ee049b02ed528bab3>`_
+
 Sampling Bayesian models with Hamiltonian MCMC involving an ODE is where the
 features of sunode shine.  We need to solve the ODE (ofter rather small ODEs) a
 large number of times, so Python overhead will hurt us a lot, and we need to
