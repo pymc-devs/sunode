@@ -3,8 +3,7 @@ name: Python package
 on: [push, pull_request]
 
 jobs:
-  run: 
-  - name: Linux Build
+  test-on-linux:
     runs-on: ${{ matrix.operating-system }}
     strategy:
       max-parallel: 4
@@ -31,7 +30,7 @@ jobs:
         source activate sunode-env
         python -c "import sunode"
         coverage run -m pytest --pyargs sunode
-  - name: Windows Build
+  test-on-windows:
     runs-on: ${{ matrix.operating-system }}
     strategy:
       max-parallel: 4
