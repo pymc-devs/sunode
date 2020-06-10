@@ -1,13 +1,13 @@
 .. _usage-basic:
 
-Usage without theano
-====================
+Stand-alone usage
+=================
 
 We will use the Lotka-Volterra equations as a simple example: We have two
-animal populations (Lyxes and Hares). The Lyxes die of natural causes with a
+animal populations (Lynxes and Hares). The Lynxes die of natural causes with a
 rate proportianl to their number, and are born with a rate proportional to the
-number of lyxes and hares. Hares are born with a rate proportial to their
-current number, and die when eaten by a lyx. We get:
+number of lynxes and hares. Hares are born with a rate proportial to their
+current number, and die when eaten by a lynx. We get:
 
 .. math::
    \frac{dH}{dt} = \alpha H - \beta LH \\ \frac{dL}{dt} = \delta LH - \gamma L
@@ -90,3 +90,41 @@ After defining states, parameters and right-hand-side function we can create a
         states=states,
         rhs_sympy=lotka_volterra
     )
+
+The problem provides structured numpy dtypes for states and parameters
+(``problem.state_dtype`` and ``problem.params_dtype``), and can compile
+functions necessary for solving the ode and computing gradients. We can
+create a solver for no derivatives or with forward derivatives
+(``sunode.Solver``), or a solver that can compute gradients using
+the adjoint ODE (``sunode.AdjointSolver``).::
+
+    solver = sunode.solver.Solver(problem, compute_sens=False, solver='BDF')
+
+We can use numpy structured arrays as input, so that we don't need to
+think about how the different variables are stored in the array.
+This does not introduce runtime overhead.::
+
+    y0 = np.zeros((), dtype=problem.state_dtype)
+    y0['hares'] = 1
+    y0['lynx'] = 0.1
+
+    # At which time points do we want to evalue the solution
+    tvals = np.linspace(0, 10)
+
+We can also specify the parameters by name:::
+
+    solver.set_params_dict({
+        'alpha': 0.1,
+        'beta': 0.2,
+        'gamma': 0.3,
+        'delta': 0.4,
+    })
+
+    output = solver.make_output_buffers(tvals)
+    solver.solve(t0=0, tvals=tvals, y0=y0, y_out=output)
+
+We can convert the solution to an xarray Dataset or access the
+individual states as numpy record array::
+
+    solver.as_xarray(tvals, output).solution_hares.plot()
+    plt.plot(output.view(problem.state_dtype)['hares']
