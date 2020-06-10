@@ -55,7 +55,7 @@ jobs:
       run: conda build -c conda-forge ./sundials-feedstock/recipe
     - name: Build sunode
       run: |
-        conda build -c local -c conda-forge ./sunode/conda
+        conda build -c local -c conda-forge ./conda
     - name: Create environment to test installation
       run: |
         conda create -n sunode-env -c conda-forge python=${{ matrix.python-version }} coverage pytest pytest-cov hypothesis statsmodels
