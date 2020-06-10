@@ -44,18 +44,15 @@ jobs:
         auto-update-conda: true
         python-version: ${{ matrix.python-version }}
     - name: Log conda and Python versions
-    - run: |
+      run: |
         conda --version
         which python
     - name: Install conda build dependences
-      run: |
-        conda install -c conda-forge conda-build conda-verify
+      run: conda install -c conda-forge conda-build conda-verify
     - name: Download sundials
-      run: |
-        git clone https://github.com/conda-forge/sundials-feedstock
+      run: git clone https://github.com/conda-forge/sundials-feedstock
     - name: Build sundials
-      run: |
-        conda build -c conda-forge ./sundials-feedstock/recipe
+      run: conda build -c conda-forge ./sundials-feedstock/recipe
     - name: Build sunode
       run: |
         conda build -c local -c conda-forge ./sunode/conda
