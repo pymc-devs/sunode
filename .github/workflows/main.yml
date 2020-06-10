@@ -50,7 +50,7 @@ jobs:
     - name: Install conda build dependences
       run: conda install -c conda-forge conda-build conda-verify
     - name: Download sundials
-      run: git clone https://github.com/conda-forge/sundials-feedstock
+      run: git clone https://github.com/conda-forge/sundials-feedstock.git
     - name: Build sundials
       run: conda build -c conda-forge ./sundials-feedstock/recipe
     - name: Build sunode
