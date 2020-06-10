@@ -1,7 +1,7 @@
 *Warning* This library is still work-in-progress. It mostly works,
-but I do not consider the API stable yet. There isn't a whole lot
-of documentation either, but feel free to ask in an issue if you
-feel like playing with it.
+but I do not consider the API stable yet.
+
+You can find the documentation [here](https://sunode.readthedocs.io/en/latest/index.html).
 
 # Sunode – Solving ODEs in python
 
