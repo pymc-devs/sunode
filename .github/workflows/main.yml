@@ -42,7 +42,10 @@ jobs:
     - uses: goanpeca/setup-miniconda@v1
       with:
         auto-update-conda: true
+        activate-environment: sunode-dev
         python-version: ${{ matrix.python-version }}
+        channels: conda-forge,defaults
+        channel-priority: strict
     - name: Log conda and Python versions
       run: |
         conda --version
@@ -51,19 +54,18 @@ jobs:
       run: git clone https://github.com/conda-forge/sundials-feedstock.git
     - name: Create environment for builds & installation
       run: |
-        conda create -n sunode-env -c conda-forge python=${{ matrix.python-version }} conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels
-        activate sunode-env
+        conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels
     - name: Build sundials
-      run: conda build -c conda-forge .\sundials-feedstock\recipe
+      run: conda build .\sundials-feedstock\recipe
     - name: Build sunode
       run: |
-        conda build -c local -c conda-forge .\conda
+        conda build -c local .\conda
     - name: Install sundials into the environment
       run: |
-        conda install -c local -c conda-forge sundials
+        conda install -c local sundials
     - name: Install sunode into the environment
       run: |
-        conda install -c local -c conda-forge sunode
+        conda install -c local sunode
     - name: Run sunode tests
       run: |
         pytest --cov=./sunode --cov-report xml --cov-report term-missing sunode/
