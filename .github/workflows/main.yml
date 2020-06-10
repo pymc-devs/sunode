@@ -39,6 +39,12 @@ jobs:
         python-version: [3.8]
     steps:
     - uses: actions/checkout@v1
+    - uses: goanpeca/setup-miniconda@v1
+        with:
+          auto-update-conda: true
+          python-version: ${{ matrix.python-version }}
+    - run: conda --version
+    - run: which python
     - name: Install conda build dependences
       run: |
         conda install -c conda-forge conda-build conda-verify
