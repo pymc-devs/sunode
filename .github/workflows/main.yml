@@ -47,19 +47,17 @@ jobs:
       run: |
         conda --version
         which python
-    - name: Install conda build dependences
-      run: conda install -c conda-forge conda-build conda-verify
     - name: Download sundials
       run: git clone https://github.com/conda-forge/sundials-feedstock.git
+    - name: Create environment for builds & installation
+      run: |
+        conda create -n sunode-env -c conda-forge python=${{ matrix.python-version }} conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels
+        activate sunode-env
     - name: Build sundials
       run: conda build -c conda-forge ./sundials-feedstock/recipe
     - name: Build sunode
       run: |
         conda build -c local -c conda-forge ./conda
-    - name: Create environment to test installation
-      run: |
-        conda create -n sunode-env -c conda-forge python=${{ matrix.python-version }} coverage pytest pytest-cov hypothesis statsmodels
-        activate sunode-dev
     - name: Install sundials into the environment
       run: |
         conda install -c local -c conda-forge sundials
