@@ -1,5 +1,7 @@
-Quickstart
-==========
+.. _usage-basic:
+
+Usage without theano
+====================
 
 We will use the Lotka-Volterra equations as a simple example: We have two
 animal populations (Lyxes and Hares). The Lyxes die of natural causes with a
@@ -40,14 +42,14 @@ We also need to define the right-hand-side function, the derivaties
             'lynxes': p.delta * y.hares * y.lynxes - p.gamma * y.lynxes,
         }
 
-We need to return a dict with all states of the ODE, containing the derivatives
-of that variable. We can access the current time as the first argument to this
+We return a dict with all states of the ODE, containing the derivatives of that
+variable. We can access the current time as the first argument to this
 function, the current states through the second and the parameters though the
-third. The values `y.hares`, `p.alpha` etc. are sympy variables. If are declared
-as arrays, they will be **numpy arrays of sympy variables**. If you want to
-apply sympy functions elementwise, you have to wrap the sympy function with
-`np.vectorize` first. So for example the log-transformed version of this ODE
-might look like this::
+third. The values `y.hares`, `p.alpha` etc. are sympy variables. If they are
+declared as arrays, they will be **numpy arrays of sympy variables**. If you
+want to apply sympy functions elementwise, you have to wrap the sympy function
+with `np.vectorize` first. So for example the log-transformed version of this
+ODE might look like this::
 
     import sympy as sym
 
@@ -76,8 +78,9 @@ might look like this::
        if y.some_state > 1:
            value += 1
 
-   `p.someparam` is a sympy variable, not a number, so this comparison will
+   ``y.some_param`` is a sympy variable, not a number, so this comparison will
    always be False.
+   For more details see :ref:`rhs-function`.
 
 After defining states, parameters and right-hand-side function we can create a
 `SympyProblem` instance::

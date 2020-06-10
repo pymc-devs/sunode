@@ -35,8 +35,9 @@ Contents
 .. toctree::
    :maxdepth: 2
 
-   quickstart
-   manual_calling
+   quickstart_pymc3
+   without_pymc
+   rhs_function
    limitations
 
 
