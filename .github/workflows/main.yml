@@ -51,8 +51,10 @@ jobs:
         conda --version
         which python
         python --version
-    - name: Download sundials
-      run: git clone git://github.com/conda-forge/sundials-feedstock.git
+    - name: Clone something for sanity check
+      run: git clone https://github.com/michaelosthege/pyrff
+    - name: Clone sundials
+      run: git clone https://github.com/conda-forge/sundials-feedstock
     - name: Install build and test dependencies
       run: |
         conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels
