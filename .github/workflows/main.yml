@@ -65,11 +65,14 @@ jobs:
     - name: Install build and test dependencies 
       run: |
         conda install hypothesis statsmodels
-    - name: Build sundials
+    - name: Set PYTHONUNBUFFERED
       run: |
-        dir .\sundials-feedstock
         set PYTHONUNBUFFERED=1
+    - name: Sundials check
+      run: |
         conda build --debug --check .\sundials-feedstock\recipe
+    - name: Sundials build
+      run: |
         conda build --debug .\sundials-feedstock\recipe
     - name: Build sunode
       run: |
