@@ -61,7 +61,8 @@ jobs:
         set PYTHONUNBUFFERED=1
     - name: Install conda-forge-ci-setup
       run: |
-        conda-forge-ci-setup
+        conda install conda-forge-ci-setup
+        run_conda_forge_build_setup
     - name: Sundials check
       run: |
         conda-build --debug --check .\sundials-feedstock\recipe
