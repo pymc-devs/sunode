@@ -55,19 +55,13 @@ jobs:
       run: git clone https://github.com/conda-forge/sundials-feedstock.git
     - name: Install build and test dependencies
       run: |
-        conda install conda-build
-    - name: Install build and test dependencies 2
-      run: |
-        conda install conda-verify
-    - name: Install build and test dependencies 3
-      run: |
-        conda install coverage pytest pytest-cov
-    - name: Install build and test dependencies 
-      run: |
-        conda install hypothesis statsmodels
+        conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels
     - name: Set PYTHONUNBUFFERED
       run: |
         set PYTHONUNBUFFERED=1
+    - name: Install conda-forge-ci-setup
+      run: |
+        conda-forge-ci-setup
     - name: Sundials check
       run: |
         conda-build --debug --check .\sundials-feedstock\recipe
