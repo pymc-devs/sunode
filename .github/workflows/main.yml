@@ -71,7 +71,7 @@ jobs:
         run_conda_forge_build_setup
     - name: Sundials build
       run: |
-        conda-build --debug -c local .\sundials-feedstock\recipe
+        conda-build --debug .\sundials-feedstock\recipe
     - name: Sunode check
       run: |
         conda-build --debug -c local --check .\conda
