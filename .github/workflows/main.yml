@@ -69,6 +69,9 @@ jobs:
       run: |
         conda install conda-forge-ci-setup
         run_conda_forge_build_setup
+    - name: Sundials check
+      run: |
+        conda-build --debug --check .\sundials-feedstock\recipe
     - name: Sundials build
       run: |
         conda-build --debug .\sundials-feedstock\recipe
