@@ -63,19 +63,19 @@ jobs:
       run: |
         conda install conda-forge-ci-setup
         run_conda_forge_build_setup
-    - name: Sundials check
-      run: |
-        conda-build --debug --check .\sundials-feedstock\recipe
     - name: Sundials build
       run: |
-        conda-build --debug .\sundials-feedstock\recipe
-    - name: Build sunode
+        conda-build --debug -c local .\sundials-feedstock\recipe
+    - name: Sunode check
       run: |
-        conda-build -c local .\conda
-    - name: Install sundials into the environment
+        conda-build --debug -c local --check .\conda
+    - name: Sunode build
+      run: |
+        conda-build --debug -c local .\conda
+    - name: Install sundials
       run: |
         conda install -c local sundials
-    - name: Install sunode into the environment
+    - name: Install sunode
       run: |
         conda install -c local sunode
     - name: Run sunode tests
