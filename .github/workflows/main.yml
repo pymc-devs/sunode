@@ -42,7 +42,7 @@ jobs:
     - name: Checkout sundials-feedstock
       uses: actions/checkout@v2
       with:
-        repository: github.com/conda-forge/sundials-feedstock
+        repository: conda-forge/sundials-feedstock
         path: .\sundials-feedstock
     - name: Debug dir
       run: dir
