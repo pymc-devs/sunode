@@ -66,7 +66,12 @@ jobs:
       run: |
         conda install hypothesis statsmodels
     - name: Build sundials
-      run: conda build .\sundials-feedstock\recipe
+      run: |
+        dir .
+        dir .\sundials-feedstock
+        export PYTHONUNBUFFERED=1
+        conda build --debug --check .\sundials-feedstock\recipe
+        conda build --debug .\sundials-feedstock\recipe
     - name: Build sunode
       run: |
         conda build -c local .\conda
