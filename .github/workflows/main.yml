@@ -70,13 +70,13 @@ jobs:
         set PYTHONUNBUFFERED=1
     - name: Sundials check
       run: |
-        conda build --debug --check .\sundials-feedstock\recipe
+        conda-build --debug --check .\sundials-feedstock\recipe
     - name: Sundials build
       run: |
-        conda build --debug .\sundials-feedstock\recipe
+        conda-build --debug .\sundials-feedstock\recipe
     - name: Build sunode
       run: |
-        conda build -c local .\conda
+        conda-build -c local .\conda
     - name: Install sundials into the environment
       run: |
         conda install -c local sundials
