@@ -43,13 +43,14 @@ jobs:
       with:
         auto-update-conda: true
         activate-environment: sunode-dev
-        python-version: ${{ matrix.python-version }}
+        python-version: 3.7
         channels: conda-forge,defaults
         channel-priority: strict
     - name: Log conda and Python versions
       run: |
         conda --version
         which python
+        python --version
     - name: Download sundials
       run: git clone https://github.com/conda-forge/sundials-feedstock.git
     - name: Install build and test dependencies
