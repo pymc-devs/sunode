@@ -36,7 +36,7 @@ jobs:
       max-parallel: 4
       matrix:
         operating-system: [windows-latest]
-        python-version: [3.7, 3.8]
+        python-version: [3.7]
     steps:
     - name: Install miniconda
       uses: goanpeca/setup-miniconda@v1
@@ -56,7 +56,7 @@ jobs:
         conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels sundials
     - name: Sunode build
       run: |
-        conda-build --debug -c local .\conda
+              conda-build --variants "{'python': ['${{ matrix.python-version }}'], 'vc': ['14']}" .\conda
     - name: Install sunode
       run: |
         conda install -c local sunode
