@@ -51,12 +51,13 @@ jobs:
         conda --version
         which python
         python --version
+        conda config --get
     - name: Install build and test dependencies
       run: |
         conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels sundials
     - name: Sunode build
       run: |
-              conda-build --variants "{'python': ['${{ matrix.python-version }}'], 'vc': ['14']}" .\conda
+              conda-build --variants "{'python': ['${{ matrix.python-version }}'], 'vc': ['14']}" ./conda
     - name: Install sunode
       run: |
         conda install -c local sunode
