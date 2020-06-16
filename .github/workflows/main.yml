@@ -34,6 +34,16 @@ jobs:
     - name: Build package
       run: |
         conda build --variants "{python: [${{ matrix.python-version }}]}" ./conda
+    - name: Log conda and Python versions again
+      run: |
+        conda --version
+        which python
+        python --version
+        conda config --get
+        ls /usr/share/miniconda/envs
+        ls /usr/share/miniconda/envs/sunode-dev
+        ls /usr/share/miniconda/envs/sunode-dev/conda-bld
+        ls /usr/share/miniconda/envs/sunode-dev/conda-bld/noarch/
     - name: Install package 
       run: |
         conda install --yes -c local -c file:///usr/share/miniconda/envs/sunode-dev/conda-bld/ sunode
