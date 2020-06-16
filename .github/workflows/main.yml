@@ -29,7 +29,6 @@ jobs:
         which python
         python --version
         conda config --get
-        /usr/share/miniconda
     - name: Install package 
       run: |
         conda build --variants "{python: [${{ matrix.python-version }}]}" ./conda
