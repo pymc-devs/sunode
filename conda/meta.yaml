@@ -16,19 +16,19 @@ requirements:
   build:
     - {{ compiler('c') }}
   host:
-    - python >=3.7
+    - python
     - pip
     - numpy >=1.14
     - liblapack
     - cffi
-    - sundials >=5.2
+    - sundials >=5.3
   run:
-    - python >=3.7
+    - python
     - numpy >=1.14
     - cffi
     - xarray
     - scipy
-    - sundials >=5.2
+    - sundials >=5.3
     - numba >=0.49
     - typing_extensions
     - sympy
