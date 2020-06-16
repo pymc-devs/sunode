@@ -20,19 +20,20 @@ jobs:
         python-version: ${{ matrix.python-version }}
         channels: conda-forge,defaults
         channel-priority: strict
+    - name: Install Dependences
+      run: |
+        conda install --yes conda-build conda-verify coverage pytest hypothesis statsmodels
     - name: Log conda and Python versions
       run: |
         conda --version
         which python
         python --version
         conda config --get
-    - name: Install Dependences
-      run: |
-        conda install --yes conda-build conda-verify coverage pytest hypothesis statsmodels
+        /usr/share/miniconda
     - name: Install package 
       run: |
-        conda build ./conda
-        conda install --yes -c file://${CONDA_PREFIX}/conda-bld/ sunode
+        conda build --variants "{python: [${{ matrix.python-version }}]}" ./conda
+        conda install --yes -c file:///usr/share/miniconda/envs/sunode-dev/conda-bld/ sunode
     - name: Test with coverage
       run: |
         python -c "import sunode"
