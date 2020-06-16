@@ -25,7 +25,7 @@ jobs:
         conda install --yes conda-build conda-verify coverage pytest hypothesis statsmodels
     - name: Install package 
       run: |
-        conda-build -c conda-forge ./conda
+        conda build ./conda
         conda install --yes -c file://${CONDA_PREFIX}/conda-bld/ sunode
     - name: Test with coverage
       run: |
