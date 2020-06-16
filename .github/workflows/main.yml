@@ -3,40 +3,41 @@ name: Python package
 on: [push, pull_request]
 
 jobs:
-  #test-on-linux:
-  #  runs-on: ${{ matrix.operating-system }}
-  #  strategy:
-  #    max-parallel: 4
-  #    matrix:
-  #      operating-system: [ubuntu-latest]
-  #      python-version: [3.8]
-  #  steps:
-  #  - uses: actions/checkout@v1
-  #  - name: Install Dependences
-  #    run: |
-  #      export PATH="/usr/share/miniconda/bin:$PATH"
-  #      conda create -n sunode-env -q --yes -c conda-forge python=${PYVER} conda-build conda-verify coverage pytest hypothesis statsmodels
-  #    env:
-  #      PYVER: ${{ matrix.python-version }}
-  #  - name: Install package 
-  #    run: |
-  #      export PATH="/usr/share/miniconda/bin:$PATH"
-  #      source activate sunode-env
-  #      conda-build -c conda-forge ./conda
-  #      conda install --yes -c file://${CONDA_PREFIX}/conda-bld/ -c conda-forge sunode
-  #  - name: Test with coverage
-  #    run: |
-  #      export PATH="/usr/share/miniconda/bin:$PATH"
-  #      source activate sunode-env
-  #      python -c "import sunode"
-  #      coverage run -m pytest --pyargs sunode
+  test-on-linux:
+    runs-on: ${{ matrix.operating-system }}
+    strategy:
+      max-parallel: 4
+      matrix:
+        operating-system: [ubuntu-latest]
+        python-version: [3.7, 3.8]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install miniconda
+      uses: goanpeca/setup-miniconda@v1
+      with:
+        auto-update-conda: true
+        activate-environment: sunode-dev
+        python-version: ${{ matrix.python-version }}
+        channels: conda-forge,defaults
+        channel-priority: strict
+    - name: Install Dependences
+      run: |
+        conda install --yes conda-build conda-verify coverage pytest hypothesis statsmodels
+    - name: Install package 
+      run: |
+        conda-build -c conda-forge ./conda
+        conda install --yes -c file://${CONDA_PREFIX}/conda-bld/ sunode
+    - name: Test with coverage
+      run: |
+        python -c "import sunode"
+        coverage run -m pytest --pyargs sunode
   test-on-windows:
     runs-on: ${{ matrix.operating-system }}
     strategy:
       max-parallel: 4
       matrix:
         operating-system: [windows-latest]
-        python-version: [3.7]
+        python-version: [3.7, 3.8]
     steps:
     - uses: actions/checkout@v2
     - name: Debug dir
@@ -62,10 +63,10 @@ jobs:
         conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels sundials
     - name: Sunode build
       run: |
-        conda build --variants "{'python': ['${{ matrix.python-version }}']}" .\conda
+        conda build --variants "{python: [${{ matrix.python-version }}]}" .\conda
     - name: Install sunode
       run: |
-        conda install -c local sunode
+        conda install --yes -c local -c file://$Env:CONDA_PREFIX\conda-bld sunode
     - name: Run sunode tests
       run: |
-        pytest --cov=./sunode --cov-report xml --cov-report term-missing sunode/
+        pytest --cov=.\sunode --cov-report xml --cov-report term-missing sunode/
