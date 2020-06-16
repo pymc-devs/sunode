@@ -39,6 +39,7 @@ jobs:
         python-version: [3.7]
     steps:
     - name: Debug dir
+      shell: cmd /C call {0}
       run: dir
     - name: Install miniconda
       uses: goanpeca/setup-miniconda@v1
@@ -60,7 +61,7 @@ jobs:
         conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels sundials
     - name: Sunode build
       run: |
-        conda build --variants "{'python': ['${{ matrix.python-version }}'], 'vc': ['14']}" .\conda
+        conda build --variants "{'python': ['${{ matrix.python-version }}']}" .\conda
     - name: Install sunode
       run: |
         conda install -c local sunode
