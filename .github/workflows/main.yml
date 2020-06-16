@@ -29,7 +29,7 @@ jobs:
         which python
         python --version
         conda config --get
-        ls /usr/share/miniconda/envs
+        ls /usr/share/miniconda/conda-bld
         ls /usr/share/miniconda/envs/sunode-dev
     - name: Build package
       run: |
@@ -42,11 +42,11 @@ jobs:
         conda config --get
         ls /usr/share/miniconda/envs
         ls /usr/share/miniconda/envs/sunode-dev
-        ls /usr/share/miniconda/envs/sunode-dev/conda-bld
-        ls /usr/share/miniconda/envs/sunode-dev/conda-bld/noarch/
+        ls /usr/share/miniconda/conda-bld
+        ls /usr/share/miniconda/conda-bld/noarch/
     - name: Install package 
       run: |
-        conda install --yes -c local -c file:///usr/share/miniconda/envs/sunode-dev/conda-bld/ sunode
+        conda install --yes -c local -c file:///usr/share/miniconda/conda-bld/ sunode
     - name: Test with coverage
       run: |
         python -c "import sunode"
@@ -86,7 +86,7 @@ jobs:
         conda build --variants "{python: [${{ matrix.python-version }}]}" .\conda
     - name: Install sunode
       run: |
-        conda install --yes -c local -c file:///c/Miniconda/envs/sunode-dev/python/conda-bld sunode
+        conda install --yes -c local -c file:///c/Miniconda/conda-bld sunode
     - name: Run sunode tests
       run: |
         pytest --cov=.\sunode --cov-report xml --cov-report term-missing sunode/
