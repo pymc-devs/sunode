@@ -51,7 +51,7 @@ jobs:
     - name: Install package 
       shell: bash -l {0}
       run: |
-        conda install --yes -c local sunode
+        conda install --yes -c file:///usr/share/miniconda/envs/sunode-dev/conda-bld sunode
     - name: debug
       shell: bash -l {0}
       run: |
@@ -116,4 +116,5 @@ jobs:
     - name: Run sunode tests
       shell: cmd /C call {0}
       run: |
+        conda info
         pytest --cov=.\sunode --cov-report xml --cov-report term-missing sunode/
