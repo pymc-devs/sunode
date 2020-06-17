@@ -55,19 +55,6 @@ jobs:
     - name: debug
       shell: bash -l {0}
       run: |
-        echo /usr/share/miniconda/
-        ls /usr/share/miniconda/envs/
-        echo /usr/share/miniconda/lib
-        ls /usr/share/miniconda/lib
-        echo /usr/share/miniconda/lib/python3.7/
-        ls /usr/share/miniconda/lib/python3.7/
-        echo /usr/share/miniconda/lib/python3.7/site-packages
-        ls /usr/share/miniconda/lib/python3.7/site-packages
-        echo /usr/share/miniconda/lib/python3.7/site-packages/sunode
-        ls /usr/share/miniconda/lib/python3.7/site-packages/sunode
-        which python
-        python --version
-        conda config --get
         conda info
     - name: Test with coverage
       shell: bash -l {0}
