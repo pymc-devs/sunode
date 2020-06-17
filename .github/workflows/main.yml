@@ -51,7 +51,7 @@ jobs:
     - name: Install package 
       shell: bash -l {0}
       run: |
-        conda install --yes -c local -c file:///usr/share/miniconda/envs/conda-bld/ sunode
+        conda install --yes -c local sunode
     - name: debug
       shell: bash -l {0}
       run: |
