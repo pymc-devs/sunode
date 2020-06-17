@@ -162,7 +162,7 @@ if the python multiprocessing is using forks instead of spawning new processes.
 This is the default on Linux, but on Mac it has to be specified manually::
 
     import multiprocessing as mp
-    mp.set_start_method('spawn')
+    mp.set_start_method('fork')
 
 Windows does not support this at all. You can however disable parallel sampling
 by setting ``cores=1`` in ``pm.sample()``.
