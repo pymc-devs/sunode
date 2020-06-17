@@ -47,16 +47,16 @@ jobs:
         conda install --yes -c local -c file:///usr/share/miniconda/conda-bld/ sunode
     - name: debug
       run: |
-        echo /usr/share/miniconda/envs/sunode-dev
-        ls /usr/share/miniconda/envs/sunode-dev
-        echo /usr/share/miniconda/envs/sunode-dev/lib
-        ls /usr/share/miniconda/envs/sunode-dev/lib
-        echo /usr/share/miniconda/envs/sunode-dev/lib/python3.7/
-        ls /usr/share/miniconda/envs/sunode-dev/lib/python3.7/
-        echo /usr/share/miniconda/envs/sunode-dev/lib/python3.7/site-packages
-        ls /usr/share/miniconda/envs/sunode-dev/lib/python3.7/site-packages
-        echo /usr/share/miniconda/envs/sunode-dev/lib/python3.7/site-packages/sunode
-        ls /usr/share/miniconda/envs/sunode-dev/lib/python3.7/site-packages/sunode
+        echo /usr/share/miniconda/envs/base
+        ls /usr/share/miniconda/envs/base
+        echo /usr/share/miniconda/envs/base/lib
+        ls /usr/share/miniconda/envs/base/lib
+        echo /usr/share/miniconda/envs/base/lib/python3.7/
+        ls /usr/share/miniconda/envs/base/lib/python3.7/
+        echo /usr/share/miniconda/envs/base/lib/python3.7/site-packages
+        ls /usr/share/miniconda/envs/base/lib/python3.7/site-packages
+        echo /usr/share/miniconda/envs/base/lib/python3.7/site-packages/sunode
+        ls /usr/share/miniconda/envs/base/lib/python3.7/site-packages/sunode
     - name: Test with coverage
       run: |
         python -c "import sunode"
@@ -96,7 +96,7 @@ jobs:
         conda build --variants "{python: [${{ matrix.python-version }}]}" .\conda
     - name: Install sunode
       run: |
-        conda install --yes -c local -c file:///c/Miniconda/conda-bld sunode
+        conda install --yes -c local -c file:///c/Miniconda/envs/sunode-dev/conda-bld sunode
     - name: Run sunode tests
       run: |
         pytest --cov=.\sunode --cov-report xml --cov-report term-missing sunode/
