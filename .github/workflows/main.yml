@@ -59,7 +59,6 @@ jobs:
         ls /usr/share/miniconda/lib/python3.7/site-packages/sunode
     - name: Test with coverage
       run: |
-        python -c "import sunode"
         coverage run -m pytest --pyargs sunode
   test-on-windows:
     runs-on: ${{ matrix.operating-system }}
