@@ -112,7 +112,7 @@ jobs:
     - name: Install sunode
       shell: cmd /C call {0}
       run: |
-        conda install --yes -c local -c file:///c/Miniconda/envs/sunode-dev/conda-bld sunode
+        conda install --yes -c local sunode
     - name: Run sunode tests
       shell: cmd /C call {0}
       run: |
