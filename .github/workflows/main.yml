@@ -3,63 +3,105 @@ name: Python package
 on: [push, pull_request]
 
 jobs:
-  run: 
-  - name: Linux Build
+  test-on-linux:
     runs-on: ${{ matrix.operating-system }}
     strategy:
       max-parallel: 4
       matrix:
         operating-system: [ubuntu-latest]
-        python-version: [3.8]
+        python-version: [3.7]
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
+    - name: Install miniconda
+      uses: goanpeca/setup-miniconda@v1
+      with:
+        auto-update-conda: true
+        activate-environment: sunode-dev
+        python-version: ${{ matrix.python-version }}
+        channels: conda-forge,defaults
+        channel-priority: strict
     - name: Install Dependences
+      shell: bash -l {0}
       run: |
-        export PATH="/usr/share/miniconda/bin:$PATH"
-        conda create -n sunode-env -q --yes -c conda-forge python=${PYVER} conda-build conda-verify coverage pytest hypothesis statsmodels
-      env:
-        PYVER: ${{ matrix.python-version }}
+        conda info
+        conda install --yes conda-build conda-verify coverage pytest hypothesis statsmodels
+    - name: Log conda and Python versions
+      shell: bash -l {0}
+      run: |
+        conda --version
+        conda info
+        which python
+        python --version
+        conda config --get
+    - name: Build package
+      shell: bash -l {0}
+      run: |
+        conda build --variants "{python: [${{ matrix.python-version }}]}" ./conda
+    - name: Log conda and Python versions again
+      shell: bash -l {0}
+      run: |
+        conda --version
+        which python
+        python --version
+        conda config --get
+        ls /usr/share/miniconda/envs
+        ls /usr/share/miniconda/envs/sunode-dev
+        ls /usr/share/miniconda/envs/sunode-dev/conda-bld
+        ls /usr/share/miniconda/envs/sunode-dev/conda-bld/noarch/
     - name: Install package 
+      shell: bash -l {0}
       run: |
-        export PATH="/usr/share/miniconda/bin:$PATH"
-        source activate sunode-env
-        conda-build -c conda-forge ./conda
-        conda install --yes -c file://${CONDA_PREFIX}/conda-bld/ -c conda-forge sunode
+        conda install --yes -c file:///usr/share/miniconda/envs/sunode-dev/conda-bld sunode
+    - name: debug
+      shell: bash -l {0}
+      run: |
+        conda info
     - name: Test with coverage
+      shell: bash -l {0}
       run: |
-        export PATH="/usr/share/miniconda/bin:$PATH"
-        source activate sunode-env
-        python -c "import sunode"
         coverage run -m pytest --pyargs sunode
-  - name: Windows Build
+  test-on-windows:
     runs-on: ${{ matrix.operating-system }}
     strategy:
       max-parallel: 4
       matrix:
         operating-system: [windows-latest]
-        python-version: [3.8]
+        python-version: [3.7]
     steps:
-    - uses: actions/checkout@v1
-    - name: Install conda build dependences
+    - uses: actions/checkout@v2
+    - name: Debug dir
+      shell: cmd /C call {0}
+      run: dir
+    - name: Install miniconda
+      uses: goanpeca/setup-miniconda@v1
+      with:
+        auto-update-conda: true
+        activate-environment: sunode-dev
+        python-version: ${{ matrix.python-version }}
+        channels: conda-forge,defaults
+        channel-priority: strict
+    - name: Log conda and Python versions
+      shell: cmd /C call {0}
       run: |
-        conda install -c conda-forge conda-build conda-verify
-    - name: Build sundials locally
+        conda --version
+        which python
+        python --version
+        conda config --get
+        conda info
+    - name: Install build and test dependencies
+      shell: cmd /C call {0}
       run: |
-        git clone https://github.com/conda-forge/sundials-feedstock
-        conda build -c conda-forge ./sundials-feedstock/recipe
-    - name: Build sunode
+        conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels sundials
+    - name: Sunode build
+      shell: cmd /C call {0}
       run: |
-        conda build -c local -c conda-forge ./sunode/conda
-    - name: Create environment to test installation
+        conda build --variants "{python: [${{ matrix.python-version }}]}" .\conda
+    - name: Install sunode
+      shell: cmd /C call {0}
       run: |
-        conda create -n sunode-env -c conda-forge python=${{ matrix.python-version }} coverage pytest pytest-cov hypothesis statsmodels
-        activate sunode-dev
-    - name: Install sundials into the environment
-      run: |
-        conda install -c local -c conda-forge sundials
-    - name: Install sunode into the environment
-      run: |
-        conda install -c local -c conda-forge sunode
+        conda install --yes -c local sunode
     - name: Run sunode tests
+      shell: cmd /C call {0}
       run: |
-        pytest --cov=./sunode --cov-report xml --cov-report term-missing sunode/
+        conda info
+        pytest --cov=.\sunode --cov-report xml --cov-report term-missing sunode/
