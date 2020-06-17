@@ -21,10 +21,12 @@ jobs:
         channels: conda-forge,defaults
         channel-priority: strict
     - name: Install Dependences
+      shell: bash -l {0}
       run: |
         conda info
         conda install --yes conda-build conda-verify coverage pytest hypothesis statsmodels
     - name: Log conda and Python versions
+      shell: bash -l {0}
       run: |
         conda --version
         conda info
@@ -32,9 +34,11 @@ jobs:
         python --version
         conda config --get
     - name: Build package
+      shell: bash -l {0}
       run: |
         conda build --variants "{python: [${{ matrix.python-version }}]}" ./conda
     - name: Log conda and Python versions again
+      shell: bash -l {0}
       run: |
         conda --version
         which python
@@ -42,12 +46,14 @@ jobs:
         conda config --get
         ls /usr/share/miniconda/envs
         ls /usr/share/miniconda/envs/sunode-dev
-        ls /usr/share/miniconda/conda-bld
-        ls /usr/share/miniconda/conda-bld/noarch/
+        ls /usr/share/miniconda/envs/sunode-dev/conda-bld
+        ls /usr/share/miniconda/envs/sunode-dev/conda-bld/noarch/
     - name: Install package 
+      shell: bash -l {0}
       run: |
-        conda install --yes -c local -c file:///usr/share/miniconda/conda-bld/ sunode
+        conda install --yes -c local -c file:///usr/share/miniconda/envs/conda-bld/ sunode
     - name: debug
+      shell: bash -l {0}
       run: |
         echo /usr/share/miniconda/
         ls /usr/share/miniconda/envs/
@@ -64,6 +70,7 @@ jobs:
         conda config --get
         conda info
     - name: Test with coverage
+      shell: bash -l {0}
       run: |
         coverage run -m pytest --pyargs sunode
   test-on-windows:
@@ -87,21 +94,26 @@ jobs:
         channels: conda-forge,defaults
         channel-priority: strict
     - name: Log conda and Python versions
+      shell: cmd /C call {0}
       run: |
         conda --version
         which python
         python --version
         conda config --get
-        dir
+        conda info
     - name: Install build and test dependencies
+      shell: cmd /C call {0}
       run: |
         conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels sundials
     - name: Sunode build
+      shell: cmd /C call {0}
       run: |
         conda build --variants "{python: [${{ matrix.python-version }}]}" .\conda
     - name: Install sunode
+      shell: cmd /C call {0}
       run: |
-        conda install --yes -c local -c file:///c/Miniconda/envs/base/conda-bld sunode
+        conda install --yes -c local -c file:///c/Miniconda/envs/sunode-dev/conda-bld sunode
     - name: Run sunode tests
+      shell: cmd /C call {0}
       run: |
         pytest --cov=.\sunode --cov-report xml --cov-report term-missing sunode/
