@@ -83,10 +83,6 @@ jobs:
     - name: Log conda and Python versions
       shell: cmd /C call {0}
       run: |
-        conda --version
-        which python
-        python --version
-        conda config --get
         conda info
     - name: Install build and test dependencies
       shell: cmd /C call {0}
