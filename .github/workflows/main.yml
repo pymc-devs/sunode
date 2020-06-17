@@ -51,12 +51,12 @@ jobs:
         ls /usr/share/miniconda/envs/sunode-dev
         echo /usr/share/miniconda/envs/sunode-dev/lib
         ls /usr/share/miniconda/envs/sunode-dev/lib
-        echo /usr/share/miniconda/envs/sunode-dev/lib/python3*/
-        ls /usr/share/miniconda/envs/sunode-dev/lib/python3*/
-        echo /usr/share/miniconda/envs/sunode-dev/lib/python3*/site-packages
-        ls /usr/share/miniconda/envs/sunode-dev/lib/python3*/site-packages
-        echo /usr/share/miniconda/envs/sunode-dev/lib/python3*/site-packages/sunode
-        ls /usr/share/miniconda/envs/sunode-dev/lib/python3*/site-packages/sunode
+        echo /usr/share/miniconda/envs/sunode-dev/lib/python3.7/
+        ls /usr/share/miniconda/envs/sunode-dev/lib/python3.7/
+        echo /usr/share/miniconda/envs/sunode-dev/lib/python3.7/site-packages
+        ls /usr/share/miniconda/envs/sunode-dev/lib/python3.7/site-packages
+        echo /usr/share/miniconda/envs/sunode-dev/lib/python3.7/site-packages/sunode
+        ls /usr/share/miniconda/envs/sunode-dev/lib/python3.7/site-packages/sunode
     - name: Test with coverage
       run: |
         python -c "import sunode"
