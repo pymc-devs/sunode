@@ -22,10 +22,12 @@ jobs:
         channel-priority: strict
     - name: Install Dependences
       run: |
+        conda info
         conda install --yes conda-build conda-verify coverage pytest hypothesis statsmodels
     - name: Log conda and Python versions
       run: |
         conda --version
+        conda info
         which python
         python --version
         conda config --get
@@ -57,6 +59,10 @@ jobs:
         ls /usr/share/miniconda/lib/python3.7/site-packages
         echo /usr/share/miniconda/lib/python3.7/site-packages/sunode
         ls /usr/share/miniconda/lib/python3.7/site-packages/sunode
+        which python
+        python --version
+        conda config --get
+        conda info
     - name: Test with coverage
       run: |
         coverage run -m pytest --pyargs sunode
@@ -95,7 +101,7 @@ jobs:
         conda build --variants "{python: [${{ matrix.python-version }}]}" .\conda
     - name: Install sunode
       run: |
-        conda install --yes -c local -c file:///c/Miniconda/envs/sunode-dev/conda-bld sunode
+        conda install --yes -c local -c file:///c/Miniconda/envs/base/conda-bld sunode
     - name: Run sunode tests
       run: |
         pytest --cov=.\sunode --cov-report xml --cov-report term-missing sunode/
