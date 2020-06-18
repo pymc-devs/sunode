@@ -49,9 +49,6 @@ jobs:
         python-version: [3.7]
     steps:
     - uses: actions/checkout@v2
-    - name: Debug dir
-      shell: cmd /C call {0}
-      run: dir
     - name: Install miniconda
       uses: goanpeca/setup-miniconda@v1
       with:
