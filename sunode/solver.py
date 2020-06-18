@@ -7,6 +7,7 @@ import xarray as xr
 
 import sunode
 from sunode.basic import CPointer, ERRORS, lib, ffi, check, check_ptr, Borrows, check_code
+from sunode.dtypesubset import _as_dict
 from sunode.matrix import Matrix
 from sunode.linear_solver_wrapper import LinearSolver
 from sunode.nonlinear_solver import NonlinearSolver
@@ -571,7 +572,7 @@ class AdjointSolver:
     def set_remaining_params(self, params):
         self._problem.update_remaining_params(self._user_data, params)
 
-    def solve_forward(self, t0, tvals, y0, y_out):
+    def solve_forward(self, t0, tvals, y0, y_out, *, max_retries=5):
         CVodeReInit = lib.CVodeReInit
         CVodeAdjReInit = lib.CVodeAdjReInit
         CVodeF = lib.CVodeF
@@ -599,12 +600,17 @@ class AdjointSolver:
                 y_out[0, :] = y0
                 continue
 
-            retval = TOO_MUCH_WORK
-            while retval == TOO_MUCH_WORK:
+            for retry in range(max_retries):
                 retval = CVodeF(ode, t, state_c_ptr, time_p, lib.CV_NORMAL, n_check)
-                if retval != TOO_MUCH_WORK and retval != 0:
-                    raise SolverError("Bad sundials return code while solving ode: %s (%s)"
-                                      % (ERRORS[retval], retval))
+                if retval == 0:
+                    assert time_p[0] == t
+                    break
+                if retval != TOO_MUCH_WORK:
+                    error = ERRORS[retval]
+                    raise SolverError(f"Solving ode failed before time={t}: {error} ({retval})")
+            else:
+                raise SolverError(f"Too many solver retries before time={t}.")
+
             y_out[i, :] = state_data
 
     def solve_backward(self, t0, tend, tvals, grads, grad_out, lamda_out,
