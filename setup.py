@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='sunode',
-    version='0.1',
+    version='0.1.1',
     author='Adrian Seyboldt',
     author_email='adrian.seyboldt@gmail.com',
     description='Python wrapper of sundials for solving ordinary differential equations',
