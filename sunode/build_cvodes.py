@@ -17,15 +17,9 @@ cvodes.sort()
 
 headers = common + linsolve + cvodes
 
-for fname in headers:
-    with open(fname, "r") as fheader:
-        content = fheader.read()
-    print(fname)
-    ffibuilder.cdef(content)
-
 if sys.platform == 'win32':
     with open(os.path.join(base, "source_cvodes_win.c")) as fsource:
-        content = fsource.read()
+        source_content = fsource.read()
     include = [os.path.join(os.environ["CONDA_PREFIX"], "Library", "include")]
     library_dirs = [
         os.path.join(os.environ["CONDA_PREFIX"], "Library", "lib")
@@ -36,7 +30,7 @@ if sys.platform == 'win32':
         headers = [fn for fn in headers if name not in fn]
 else:
     with open(os.path.join(base, "source_cvodes.c")) as fsource:
-        content = fsource.read()
+        source_content = fsource.read()
     include = [os.path.join(os.environ["CONDA_PREFIX"], "include")]
     library_dirs = [os.path.join(os.environ["CONDA_PREFIX"], "lib")]
     extra_libs = [
@@ -49,9 +43,16 @@ else:
         "sundials_sunlinsolklu",
     ]
 
+for fname in headers:
+    with open(fname, "r") as fheader:
+        content = fheader.read()
+    print(fname)
+    ffibuilder.cdef(content)
+
+
 ffibuilder.set_source(
     "_sundials_cvodes",
-    content,
+    source_content,
     libraries=[
         "sundials_nvecserial",
         "sundials_sunmatrixdense",
