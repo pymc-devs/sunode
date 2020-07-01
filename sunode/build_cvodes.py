@@ -23,17 +23,20 @@ for fname in headers:
     print(fname)
     ffibuilder.cdef(content)
 
-with open(os.path.join(base, "source_cvodes.c")) as fsource:
-    content = fsource.read()
-
-
 if sys.platform == 'win32':
+    with open(os.path.join(base, "source_cvodes_win.c")) as fsource:
+        content = fsource.read()
     include = [os.path.join(os.environ["CONDA_PREFIX"], "Library", "include")]
     library_dirs = [
         os.path.join(os.environ["CONDA_PREFIX"], "Library", "lib")
     ]
     extra_libs = []
+    # lapackdense is not supported by the windows build of sundials
+    for name in ['sunlinsol_lapackdense', 'sunlinsol_klu']:
+        headers = [fn for fn in headers if name not in fn]
 else:
+    with open(os.path.join(base, "source_cvodes.c")) as fsource:
+        content = fsource.read()
     include = [os.path.join(os.environ["CONDA_PREFIX"], "include")]
     library_dirs = [os.path.join(os.environ["CONDA_PREFIX"], "lib")]
     extra_libs = [
