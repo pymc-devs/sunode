@@ -14,15 +14,28 @@ sunode comes with a theano wrapper so that parameters of an ode can be estimated
 using pymc3.
 
 ### Installation
+sunode is available on conda-forge. Set up a conda environment to use conda-forge
+and install sunode:
 ```bash
-git clone git@github.com:aseyboldt/sunode
-cd sunode
-conda create -n sunode -c conda-forge python numba pymc3 sympy pandas xarray sundials
-conda activate sunode
-pip install -e .
+conda create -n sunode-env
+conda activate sunode-env
+conda config --add channels conda-forge
+conda config --set channel_priority strict
+
+conda install sunode
 ```
 
-Installation instructions for windows can be found [here](https://gist.github.com/michaelosthege/5bd75c99cd5e806ee049b02ed528bab3).
+You can also install the development version. One windows you have to make
+sure the correct visual studio version is install and in the PATH.
+```
+git clone git@github.com:aseyboldt/sunode
+# Or if no ssh key is configured:
+git clone https://github.com/aseyboldt/sunode
+
+cd sunode
+conda install --only-deps sunode
+pip install -e .
+```
 
 ### Solve an ode outside of a pymc3 model
 
@@ -205,14 +218,14 @@ with pm.Model() as model:
     pm.Lognormal('lynx', mu=y_hat['lynx'], sd=sd, observed=lynx_data)
 ```
 
-We can sample using pymc3 (I suspect you might need `cores=1` on windows for the moment):
+We can sample using pymc3 (You need `cores=1` on windows for the moment):
 ```
 with model:
     trace = pm.sample(tune=1000, draws=1000, chains=6, cores=6)
 ```
 
-Many solver options can not be specified with a nice interface at the moment,
-we can call the raw sundials functions however (this should change in the future):
+Many solver options can not be specified with a nice interface for now,
+we can call the raw sundials functions howeve:
 
 ```
 lib = sunode._cvodes.lib

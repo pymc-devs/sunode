@@ -3,32 +3,28 @@
 Quickstart with PyMC3
 =====================
 
-Official conda packages are not yet available in conda-forge. You can either
-build your own conda package or install the master version from github.
+sunode is available on conda-forge. You can setup an environmet to use conda-forge
+package if you don't have that already, and install sunode:::
 
-To use the development version, we create a new conda environment with the requirements
-and install using pip::
+    conda create -n sunode-env
+    conda activate sunode-env
+    conda config --add channels conda-forge
+    conda config --set channel_priority strict
+
+    conda install sunode
+
+You can also checkout the development version and install that:::
 
     git clone git@github.com:aseyboldt/sunode
     # Or if no ssh key is configured:
     git clone https://github.com/aseyboldt/sunode
 
     cd sunode
-    conda create -n sunode -c conda-forge python numba pymc3 sympy pandas xarray sundials
-    conda activate sunode
+    conda install --only-deps sunode
     pip install -e .
 
-To build and install a conda package locally, we clone the repo as above, and then run::
-
-    cd sunode
-    conda build ./conda
-
-    conda install -c local sunode
-    # Install it into a new environment:
-    conda create -n sunode -c local -c conda-forge sunode
-
-Instructions for installation on Windows can be found
-`here <https://gist.github.com/michaelosthege/5bd75c99cd5e806ee049b02ed528bab3>`_
+Installing the development version on Windows requires a compatible visual studio
+version.
 
 Sampling Bayesian models with Hamiltonian MCMC involving an ODE is where the
 features of sunode shine.  We need to solve the ODE (ofter rather small ODEs) a
@@ -36,8 +32,6 @@ large number of times, so Python overhead will hurt us a lot, and we need to
 compute gradients as well. Sunode provides some utility functions that make it
 easy to include an ODE into a PyMC3 model.  If you want to use it in a
 different context, see :ref:`usage-basic`.
-
-
 We will use the Lotka-Volterra equations as example:
 
 .. math::
