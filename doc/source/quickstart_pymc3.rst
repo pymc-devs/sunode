@@ -53,6 +53,7 @@ We'll use some time artificial data:::
     hare_data = np.array([
         30.0, 47.2, 70.2, 77.4, 36.3, 20.6, 18.1, 21.4, 22.0, 25.4,
         27.1, 40.3, 57.0, 76.6, 52.3, 19.5, 11.2, 7.6, 14.6, 16.2, 24.7
+    ])
     
 We also define a function for the right-hand-side of the ODE:::
 
@@ -138,12 +139,12 @@ We are only missing the likelihood now::
     with model:
         # We can access the individual variables of the solution using the
         # variable names.
-        pm.Deterministic('hares_mu', y_hat['hares'])
-        pm.Deterministic('lynx_mu', y_hat['lynx'])
+        pm.Deterministic('hares_mu', solution['hares'])
+        pm.Deterministic('lynxes_mu', solution['lynxes'])
 
         sd = pm.HalfNormal('sd')
-        pm.Lognormal('hares', mu=y_hat['hares'], sd=sd, observed=hare_data)
-        pm.Lognormal('lynx', mu=y_hat['lynx'], sd=sd, observed=lynx_data)
+        pm.Lognormal('hares', mu=solution['hares'], sd=sd, observed=hare_data)
+        pm.Lognormal('lynxes', mu=solution['lynxes'], sd=sd, observed=lynx_data)
 
 We can sample from the posterior with the gradient-based PyMC3 samplers:::
 
