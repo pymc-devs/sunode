@@ -202,12 +202,11 @@ class SympyProblem(problem.Problem):
             else:
                 raise ValueError('Unknown righ-hand-side for state %s.' % path)
 
-
         rhs_list: List[Any] = []
         for path in self.state_subset.paths:
             item = rhs
             for name in path[:-1]:
-                if name not in rhs:
+                if name not in item:
                     raise ValueError('No right-hand-side for state %s' % '.'.join(path))
                 item = item[name]
             item = item.pop(path[-1])
