@@ -24,6 +24,7 @@ requirements:
     - liblapack
     - cffi
     - sundials >=5.3
+    - theano
   run:
     - python
     - numpy >=1.14
