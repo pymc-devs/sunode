@@ -62,7 +62,7 @@ ODE might look like this::
         dhares = p.alpha * hares - p.beta * lynxes * hares
         dlynxes = p.delta * hares * lynxes - p.gamma * lynxes
         return {
-            'log_hares': dhares / hares
+            'log_hares': dhares / hares,
             'log_lynxes': dlynxes / lynxes,
         }
 
@@ -88,7 +88,8 @@ After defining states, parameters and right-hand-side function we can create a
     problem = sunode.SympyProblem(
         params=params,
         states=states,
-        rhs_sympy=lotka_volterra
+        rhs_sympy=lotka_volterra,
+        derivative_params=()
     )
 
 The problem provides structured numpy dtypes for states and parameters
@@ -106,7 +107,7 @@ This does not introduce runtime overhead.::
 
     y0 = np.zeros((), dtype=problem.state_dtype)
     y0['hares'] = 1
-    y0['lynx'] = 0.1
+    y0['lynxes'] = 0.1
 
     # At which time points do we want to evalue the solution
     tvals = np.linspace(0, 10)
@@ -127,4 +128,4 @@ We can convert the solution to an xarray Dataset or access the
 individual states as numpy record array::
 
     solver.as_xarray(tvals, output).solution_hares.plot()
-    plt.plot(output.view(problem.state_dtype)['hares']
+    plt.plot(output.view(tvals, problem.state_dtype)['hares'])

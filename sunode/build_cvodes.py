@@ -16,26 +16,33 @@ cvodes = glob.glob(os.path.join(base, "../include/cvodes/*.h"))
 cvodes.sort()
 
 headers = common + linsolve + cvodes
+include = []
+library_dirs = []
+extra_libs = []
 
 if sys.platform == 'win32':
     with open(os.path.join(base, "source_cvodes_win.c")) as fsource:
         source_content = fsource.read()
-    include = [os.path.join(os.environ["CONDA_PREFIX"], "Library", "include")]
-    library_dirs = [
-        os.path.join(os.environ["CONDA_PREFIX"], "Library", "lib")
-    ]
-    extra_libs = []
+    include += [os.path.join(os.environ["CONDA_PREFIX"], "Library", "include")]
+    library_dirs += [os.path.join(os.environ["CONDA_PREFIX"], "Library", "lib")]
+
     # lapackdense is not supported by the windows build of sundials
     for name in ['sunlinsol_lapackdense', 'sunlinsol_klu']:
         headers = [fn for fn in headers if name not in fn]
 else:
     with open(os.path.join(base, "source_cvodes.c")) as fsource:
         source_content = fsource.read()
-    include = [os.path.join(os.environ["CONDA_PREFIX"], "include")]
-    library_dirs = [os.path.join(os.environ["CONDA_PREFIX"], "lib")]
-    extra_libs = [
-        "blas",
-        "lapack",
+
+    #test if we can use conda libraries
+    if "CONDA_PREFIX" in os.environ:
+        include += [os.path.join(os.environ["CONDA_PREFIX"], "include")]
+        library_dirs += [os.path.join(os.environ["CONDA_PREFIX"], "lib")]
+        extra_libs += ["blas", "lapack"]
+    else:
+        include += ["/usr/include/suitesparse/"]
+        extra_libs.append("openblas")    
+
+    extra_libs += [
         "pthread",
         "klu",
         "sundials_sunlinsollapackdense",
