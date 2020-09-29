@@ -1,3 +1,6 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4058330.svg)](https://doi.org/10.5281/zenodo.4058330)
+
+
 You can find the documentation [here](https://sunode.readthedocs.io/en/latest/index.html).
 
 # Sunode – Solving ODEs in python
