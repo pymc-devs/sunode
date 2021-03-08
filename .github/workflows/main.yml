@@ -64,7 +64,7 @@ jobs:
     - name: Install build and test dependencies
       shell: cmd /C call {0}
       run: |
-        conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels sundials theano
+        conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels sundials
     - name: Sunode build
       shell: cmd /C call {0}
       run: |
