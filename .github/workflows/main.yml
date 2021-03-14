@@ -72,7 +72,8 @@ jobs:
     - name: Install sunode
       shell: cmd /C call {0}
       run: |
-        conda install --yes -c local sunode
+        conda install --only-deps --yes -c local sunode
+        pip install .
     - name: Run sunode tests
       shell: cmd /C call {0}
       run: |
