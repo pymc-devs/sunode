@@ -5,6 +5,9 @@ from sunode.matrix import empty_matrix
 from sunode.symode import SympyProblem
 import sunode.solver
 
+
+__version__ = "0.1.1"
+
 __all__ = [
     "empty_matrix",
     "empty_vector",
