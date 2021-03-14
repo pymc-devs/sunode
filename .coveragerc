@@ -1,0 +1,4 @@
+[run]
+omit =
+    # exclude tests files from coverage calculation
+    sunode/test*.py
