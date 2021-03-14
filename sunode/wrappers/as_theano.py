@@ -135,6 +135,8 @@ def solve_ivp(
         solution = problem.flat_solution_as_dict(flat_solution)
         return solution, flat_solution, problem, sol, y0_flat, params_subs_flat
     elif derivatives == 'forward':
+        if not "sens_mode" in solver_kwargs:
+            raise ValueError("When `derivatives=True`, the `solver_kwargs` must contain one of `sens_mode={\"simultaneous\" | \"staggered\"}`.")
         sol = solver.Solver(problem, **solver_kwargs)
         wrapper = SolveODE(sol, t0, tvals)
         flat_solution, flat_sens = wrapper(y0_flat, params_subs_flat, params_remaining_flat)

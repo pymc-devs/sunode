@@ -212,7 +212,7 @@ class BaseSolver(Borrows):
 
 class Solver:
     def __init__(self, problem: Problem, *,
-                 compute_sens: bool = False, abstol: float = 1e-10, reltol: float = 1e-10,
+                 abstol: float = 1e-10, reltol: float = 1e-10,
                  sens_mode: Optional[str] = None, scaling_factors: Optional[np.ndarray] = None,
                  constraints: Optional[np.ndarray] = None, solver='BDF'):
         self._problem = problem
@@ -247,8 +247,8 @@ class Solver:
         user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(self._user_data.data)))
         check(lib.CVodeSetUserData(self._ode, user_data_p))
 
-        self._compute_sens = compute_sens
-        if compute_sens:
+        self._compute_sens = sens_mode is not None
+        if self._compute_sens:
             sens_rhs = self._problem.make_sundials_sensitivity_rhs()
             self._init_sens(sens_rhs, sens_mode)
 
