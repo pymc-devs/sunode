@@ -214,7 +214,7 @@ class Solver:
     def __init__(self, problem: Problem, *,
                  abstol: float = 1e-10, reltol: float = 1e-10,
                  sens_mode: Optional[str] = None, scaling_factors: Optional[np.ndarray] = None,
-                 constraints: Optional[np.ndarray] = None, solver='BDF'):
+                 constraints: Optional[np.ndarray] = None, solver='BDF', linear_solver="dense"):
         self._problem = problem
         self._user_data = problem.make_user_data()
 
@@ -242,7 +242,7 @@ class Solver:
             self._constraints_vec = sunode.from_numpy(constraints)
             check(lib.CVodeSetConstraints(self._ode, self._constraints_vec.c_ptr))
 
-        self._make_linsol()
+        self._make_linsol(linear_solver)
 
         user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(self._user_data.data)))
         check(lib.CVodeSetUserData(self._ode, user_data_p))
@@ -252,12 +252,28 @@ class Solver:
             sens_rhs = self._problem.make_sundials_sensitivity_rhs()
             self._init_sens(sens_rhs, sens_mode)
 
-    def _make_linsol(self) -> None:
-        linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
-        check(lib.CVodeSetLinearSolver(self._ode, linsolver, self._jac))
+    def _make_linsol(self, linear_solver) -> None:
+        if linear_solver == "dense":
+            linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
+            check(lib.CVodeSetLinearSolver(self._ode, linsolver, self._jac))
 
-        self._jac_func = self._problem.make_sundials_jac_dense()
-        check(lib.CVodeSetJacFn(self._ode, self._jac_func.cffi))
+            self._jac_func = self._problem.make_sundials_jac_dense()
+            check(lib.CVodeSetJacFn(self._ode, self._jac_func.cffi))
+        elif linear_solver == "dense_finitediff":
+            linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
+            check(lib.CVodeSetLinearSolver(self._ode, linsolver, self._jac))
+        elif linear_solver == "spgmr_finitediff":
+            linsolver = check(lib.SUNLinSol_SPGMR(self._state_buffer.c_ptr, lib.PREC_NONE, 5))
+            check(lib.CVodeSetLinearSolver(self._ode, linsolver, ffi.NULL))
+            check(lib.SUNLinSolInitialize_SPGMR(linsolver))
+        elif linear_solver == "spgmr":
+            linsolver = check(lib.SUNLinSol_SPGMR(self._state_buffer.c_ptr, lib.PREC_NONE, 5))
+            check(lib.CVodeSetLinearSolver(self._ode, linsolver, ffi.NULL))
+            check(lib.SUNLinSolInitialize_SPGMR(linsolver))
+            jac_prod = self._problem.make_sundials_jac_prod()
+            check(lib.CVodeSetJacTimes(self._ode, ffi.NULL, jac_prod.cffi))
+        else:
+            raise ValueError(f"Unknown linear solver: {linear_solver}")
 
     def _init_sens(self, sens_rhs, sens_mode, scaling_factors=None) -> None:
         if sens_mode == 'simultaneous':
