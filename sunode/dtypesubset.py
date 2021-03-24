@@ -258,15 +258,17 @@ class DTypeSubset:
         assert len(flat_remainder) == 0
         return params
 
-    def from_dict(self, vals: Dict[str, Any], out: Optional[np.ndarray] = None) -> None:
+    def from_dict(self, vals: Dict[str, Any], out: Optional[np.ndarray] = None) -> np.ndarray:
         if out is None:
             out = np.zeros((1,), dtype=self.dtype)[0]
         _from_dict(out, vals)
+        return out
 
-    def subset_from_dict(self, vals: Dict[str, Any], out: Optional[np.ndarray] = None) -> None:
+    def subset_from_dict(self, vals: Dict[str, Any], out: Optional[np.ndarray] = None) -> np.ndarray:
         if out is None:
             out = np.zeros((1,), dtype=self.subset_dtype)[0]
         _from_dict(out, vals)
+        return out
 
     def as_dict(self, vals: np.ndarray) -> Dict[str, Any]:
         if vals.dtype != self.dtype:
