@@ -23,7 +23,7 @@ jobs:
     - name: Install Dependences
       shell: bash -l {0}
       run: |
-        conda install --yes conda-build conda-verify coverage pytest hypothesis statsmodels
+        conda install --yes conda-build conda-verify coverage pytest hypothesis statsmodels aesara
     - name: Log conda
       shell: bash -l {0}
       run: |
@@ -64,7 +64,7 @@ jobs:
     - name: Install build and test dependencies
       shell: cmd /C call {0}
       run: |
-        conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels sundials
+        conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels sundials aesara
     - name: Sunode build
       shell: cmd /C call {0}
       run: |
