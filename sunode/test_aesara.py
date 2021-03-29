@@ -1,7 +1,7 @@
 import numpy as np
 import pymc3 as pm
 
-import sunode.wrappers.as_theano
+import sunode.wrappers
 
 
 def test_nodiff_params():
@@ -27,7 +27,7 @@ def test_nodiff_params():
             'extra': np.array([0.])
         }
 
-        _ = sunode.wrappers.as_theano.solve_ivp(
+        _ = sunode.wrappers.as_aesara.solve_ivp(
             y0=y0,
             params=params,
             rhs=dydt_dict,
