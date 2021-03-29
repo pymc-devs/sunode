@@ -254,16 +254,27 @@ class SympyProblem(problem.Problem):
             debug=debug,
         )
 
-        @numba.njit(inline='always')
-        def rhs(out, t, y, user_data):  # type: ignore
-            params = user_data.params
-            rhs_calc(out, t, y, params)
+        if self.params_dtype.itemsize:
+            @numba.njit(inline='always')
+            def rhs(out, t, y, user_data):  # type: ignore
+                params = user_data.params
+                rhs_calc(out, t, y, params)
 
-            if (~np.isfinite(out)).any():
-                user_data.error_rhs[:] = out
-                user_data.error_states = y
-                return 1
-            return 0
+                if (~np.isfinite(out)).any():
+                    user_data.error_rhs[:] = out
+                    user_data.error_states = y
+                    return 1
+                return 0
+        else:
+            @numba.njit(inline='always')
+            def rhs(out, t, y, user_data):  # type: ignore
+                rhs_calc(out, t, y, None)
+
+                if (~np.isfinite(out)).any():
+                    user_data.error_rhs[:] = out
+                    user_data.error_states = y
+                    return 1
+                return 0
 
         return rhs
 
@@ -276,14 +287,23 @@ class SympyProblem(problem.Problem):
             debug=debug,
         )
 
-        @numba.njit(inline='always')
-        def adjoint(out, t, y, lamda, user_data):  # type: ignore
-            params = user_data.params
-            adj_calc(out, t, y, lamda, params)
+        if self.params_dtype.itemsize:
+            @numba.njit(inline='always')
+            def adjoint(out, t, y, lamda, user_data):  # type: ignore
+                params = user_data.params
+                adj_calc(out, t, y, lamda, params)
 
-            if (~np.isfinite(out)).any():
-                return 1
-            return 0
+                if (~np.isfinite(out)).any():
+                    return 1
+                return 0
+        else:
+            @numba.njit(inline='always')
+            def adjoint(out, t, y, lamda, user_data):  # type: ignore
+                adj_calc(out, t, y, lamda, None)
+
+                if (~np.isfinite(out)).any():
+                    return 1
+                return 0
 
         return adjoint
 
@@ -296,14 +316,23 @@ class SympyProblem(problem.Problem):
             debug=debug,
         )
 
-        @numba.njit(inline='always')
-        def quad_rhs(out, t, y, lamda, user_data):  # type: ignore
-            params = user_data.params
-            quad_calc(out, t, y, lamda, params)
+        if self.params_dtype.itemsize:
+            @numba.njit(inline='always')
+            def quad_rhs(out, t, y, lamda, user_data):  # type: ignore
+                params = user_data.params
+                quad_calc(out, t, y, lamda, params)
 
-            if (~np.isfinite(out)).any():
-                return 1
-            return 0
+                if (~np.isfinite(out)).any():
+                    return 1
+                return 0
+        else:
+            @numba.njit(inline='always')
+            def quad_rhs(out, t, y, lamda, user_data):  # type: ignore
+                quad_calc(out, t, y, lamda, None)
+
+                if (~np.isfinite(out)).any():
+                    return 1
+                return 0
 
         return quad_rhs
 
@@ -316,15 +345,25 @@ class SympyProblem(problem.Problem):
             debug=debug,
         )
 
-        @numba.njit(inline='always')
-        def jac_dense(out, t, y, fy, user_data):  # type: ignore
-            params = user_data.params
-            jac_calc(out, t, y, params)
-            if (~np.isfinite(out)).any():
-                user_data.error_jac[:] = out
-                user_data.error_states = y
-                return 1
-            return 0
+        if self.params_dtype.itemsize:
+            @numba.njit(inline='always')
+            def jac_dense(out, t, y, fy, user_data):  # type: ignore
+                params = user_data.params
+                jac_calc(out, t, y, params)
+                if (~np.isfinite(out)).any():
+                    user_data.error_jac[:] = out
+                    user_data.error_states = y
+                    return 1
+                return 0
+        else:
+            @numba.njit(inline='always')
+            def jac_dense(out, t, y, fy, user_data):  # type: ignore
+                jac_calc(out, t, y, None)
+                if (~np.isfinite(out)).any():
+                    user_data.error_jac[:] = out
+                    user_data.error_states = y
+                    return 1
+                return 0
 
         return jac_dense
 
@@ -338,15 +377,25 @@ class SympyProblem(problem.Problem):
             debug=debug,
         )
 
-        @numba.njit(inline='always')
-        def jac_prod(out, v, t, y, fy, user_data):  # type: ignore
-            params = user_data.params
-            calc_jac_prod(out, v, t, y, params)
+        if self.params_dtype.itemsize:
+            @numba.njit(inline='always')
+            def jac_prod(out, v, t, y, fy, user_data):  # type: ignore
+                params = user_data.params
+                calc_jac_prod(out, v, t, y, params)
 
-            if (~np.isfinite(out)).any():
-                user_data.error_states = y
-                return 1
-            return 0
+                if (~np.isfinite(out)).any():
+                    user_data.error_states = y
+                    return 1
+                return 0
+        else:
+            @numba.njit(inline='always')
+            def jac_prod(out, v, t, y, fy, user_data):  # type: ignore
+                calc_jac_prod(out, v, t, y, None)
+
+                if (~np.isfinite(out)).any():
+                    user_data.error_states = y
+                    return 1
+                return 0
         
         return jac_prod
 
@@ -360,14 +409,23 @@ class SympyProblem(problem.Problem):
             debug=debug,
         )
 
-        @numba.njit(inline='always')
-        def jac_dense(out, t, y, yB, fyB, user_data):  # type: ignore
-            params = user_data.params
-            jac_calc(out, t, y, params)
+        if self.params_dtype.itemsize:
+            @numba.njit(inline='always')
+            def jac_dense(out, t, y, yB, fyB, user_data):  # type: ignore
+                params = user_data.params
+                jac_calc(out, t, y, params)
 
-            if (~np.isfinite(out)).any():
-                return 1
-            return 0
+                if (~np.isfinite(out)).any():
+                    return 1
+                return 0
+        else:
+            @numba.njit(inline='always')
+            def jac_dense(out, t, y, yB, fyB, user_data):  # type: ignore
+                jac_calc(out, t, y, None)
+
+                if (~np.isfinite(out)).any():
+                    return 1
+                return 0
 
         return jac_dense
 
@@ -381,15 +439,25 @@ class SympyProblem(problem.Problem):
             debug=debug,
         )
 
-        @numba.njit(inline='always')
-        def jac_prod(out, vB, t, y, yB, fyB, user_data):  # type: ignore
-            params = user_data.params
-            calc_jac_prod(out, vB, t, y, params)
+        if self.params_dtype.itemsize:
+            @numba.njit(inline='always')
+            def jac_prod(out, vB, t, y, yB, fyB, user_data):  # type: ignore
+                params = user_data.params
+                calc_jac_prod(out, vB, t, y, params)
 
-            if (~np.isfinite(out)).any():
-                user_data.error_states = y
-                return 1
-            return 0
+                if (~np.isfinite(out)).any():
+                    user_data.error_states = y
+                    return 1
+                return 0
+        else:
+            @numba.njit(inline='always')
+            def jac_prod(out, vB, t, y, yB, fyB, user_data):  # type: ignore
+                calc_jac_prod(out, vB, t, y, None)
+
+                if (~np.isfinite(out)).any():
+                    user_data.error_states = y
+                    return 1
+                return 0
         
         return jac_prod
 
@@ -449,22 +517,38 @@ class SympyProblem(problem.Problem):
         )
         n_params = self.n_params
 
-        @numba.njit(inline='always')
-        def wrapper(out, t, y, yS, user_data):  # type: ignore
-            params = user_data.params
+        if self.params_dtype.itemsize:
+            @numba.njit(inline='always')
+            def wrapper(out, t, y, yS, user_data):  # type: ignore
+                params = user_data.params
 
-            sens_calc(
-                out,
-                t,
-                y,
-                yS,
-                params,
-            )
+                sens_calc(
+                    out,
+                    t,
+                    y,
+                    yS,
+                    params,
+                )
 
-            if (~np.isfinite(out)).any():
-                return 1
+                if (~np.isfinite(out)).any():
+                    return 1
 
-            return 0
+                return 0
+        else:
+            @numba.njit(inline='always')
+            def wrapper(out, t, y, yS, user_data):  # type: ignore
+                sens_calc(
+                    out,
+                    t,
+                    y,
+                    yS,
+                    None,
+                )
+
+                if (~np.isfinite(out)).any():
+                    return 1
+                return 0
+
         return wrapper
 
     def make_sensitivity_rhs(self, *, debug=False):  # type: ignore

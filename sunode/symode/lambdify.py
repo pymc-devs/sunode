@@ -136,6 +136,9 @@ class LambdifyAST:
 
         func = Trafo().visit(func)
 
+        if not func.body:
+            func.body.append(ast.Pass())
+
         self._body.append(func)
 
     def _sympy_as_ast(self, expr):
