@@ -1,5 +1,6 @@
 import numpy as np
-import pymc3 as pm
+import aesara
+import aesara.tensor as aet
 
 import sunode.wrappers
 
@@ -11,28 +12,33 @@ def test_nodiff_params():
             'B': y.B,
             'C': y.C,
         }
+    A = aet.dscalar("A")
+    A.tag.test_value = np.array(0.9)
 
-    with pm.Model():
-        t = np.linspace(0, 1)
 
-        y0 = {
-            'A': (pm.Uniform("A"), ()),
-            'B': np.array(1.),
-            'C': np.array(1.)
-        }
+    time = np.linspace(0, 1)
 
-        params = {
-            'alpha': np.array(1.),
-            'beta': np.array(1.),
-            'extra': np.array([0.])
-        }
+    y0 = {
+        'A': (A, ()),
+        'B': np.array(1.),
+        'C': np.array(1.)
+    }
 
-        _ = sunode.wrappers.as_aesara.solve_ivp(
-            y0=y0,
-            params=params,
-            rhs=dydt_dict,
-            tvals=t,
-            t0=t[0],
-            derivatives="forward",
-            solver_kwargs=dict(sens_mode="simultaneous")
-        )
+    params = {
+        'alpha': np.array(1.),
+        'beta': np.array(1.),
+        'extra': np.array([0.])
+    }
+
+    solution, *_ = sunode.wrappers.as_aesara.solve_ivp(
+        y0=y0,
+        params=params,
+        rhs=dydt_dict,
+        tvals=time,
+        t0=time[0],
+        derivatives="forward",
+        solver_kwargs=dict(sens_mode="simultaneous")
+    )
+
+    func = aesara.function([A], [solution["A"], solution["B"]])
+    assert func(0.2)[0].shape == time.shape
