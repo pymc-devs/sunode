@@ -9,7 +9,7 @@ source:
   path: ..
 
 build:
-  number: 4
+  number: 10
   script: "{{ PYTHON }} -m pip install . -vv"
 
   skip: True  # [py<3.7]
