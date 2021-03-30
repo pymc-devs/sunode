@@ -1,81 +1,45 @@
 name: Python package
 
-on: [push, pull_request]
+on: [pull_request, push]
 
 jobs:
   test-on-linux:
-    runs-on: ${{ matrix.operating-system }}
+    runs-on: ${{ matrix.os }}
+    name: sunode - ${{ matrix.os }} - ${{ matrix.python-version }}
+    defaults:
+      run:
+        shell: bash -l {0}
     strategy:
-      max-parallel: 4
+      max-parallel: 6
+      fail-fast: false
       matrix:
-        operating-system: [ubuntu-latest]
-        python-version: [3.7, 3.8]
+        os: ["ubuntu-latest", "windows-latest"]
+        python-version: [3.7, 3.8, 3.9]
     steps:
     - uses: actions/checkout@v2
+      with:
+        path: "sunode"
     - name: Install miniconda
       uses: conda-incubator/setup-miniconda@v2
       with:
         auto-update-conda: true
         activate-environment: sunode-dev
+        miniforge-version: latest
         python-version: ${{ matrix.python-version }}
-        channels: conda-forge,defaults
-        channel-priority: strict
     - name: Install Dependences
-      shell: bash -l {0}
       run: |
-        conda install --yes conda-build conda-verify coverage pytest hypothesis statsmodels aesara
-    - name: Log conda
-      shell: bash -l {0}
+        conda install --yes conda-build conda-verify coverage pytest hypothesis statsmodels aesara fd-find c-compiler
+    - name: Debug paths
       run: |
-        conda info
+        pwd
+        fd libpython /
     - name: Build package
-      shell: bash -l {0}
       run: |
-        conda build --variants "{python: [${{ matrix.python-version }}]}" ./conda
+        conda build --variants "{python: [${{ matrix.python-version }}]}" ./sunode/conda
     - name: Install package 
-      shell: bash -l {0}
       run: |
-        conda install --yes -c file:///usr/share/miniconda/envs/sunode-dev/conda-bld sunode
+        conda install --yes -c file:///${CONDA_PREFIX}/conda-bld/ sunode
     - name: Test with coverage
-      shell: bash -l {0}
       run: |
-        coverage run -m pytest --pyargs sunode
-  test-on-windows:
-    runs-on: ${{ matrix.operating-system }}
-    strategy:
-      max-parallel: 4
-      matrix:
-        operating-system: [windows-latest]
-        python-version: [3.7]
-    steps:
-    - uses: actions/checkout@v2
-    - name: Install miniconda
-      uses: conda-incubator/setup-miniconda@v2
-      with:
-        auto-update-conda: true
-        activate-environment: sunode-dev
-        python-version: ${{ matrix.python-version }}
-        channels: conda-forge,defaults
-        channel-priority: strict
-    - name: Log conda and Python versions
-      shell: cmd /C call {0}
-      run: |
-        conda info
-    - name: Install build and test dependencies
-      shell: cmd /C call {0}
-      run: |
-        conda install conda-build conda-verify coverage pytest pytest-cov hypothesis statsmodels sundials aesara
-    - name: Sunode build
-      shell: cmd /C call {0}
-      run: |
-        conda build --variants "{python: [${{ matrix.python-version }}]}" .\conda
-    - name: Install sunode
-      shell: cmd /C call {0}
-      run: |
-        conda install --only-deps --yes -c local sunode
-        pip install .
-    - name: Run sunode tests
-      shell: cmd /C call {0}
-      run: |
-        conda info
-        pytest --cov=.\sunode --cov-report xml --cov-report term-missing sunode/
+        # conda activate doesn't seem to set paths to the conda prefix correctly
+        env LD_LIBRARY_PATH=${CONDA_PREFIX}/lib coverage run -m pytest --pyargs sunode
