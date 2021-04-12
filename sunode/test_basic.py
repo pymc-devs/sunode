@@ -4,7 +4,7 @@ import weakref
 
 import numpy as np
 from pytest import raises
-from hypothesis import given
+from hypothesis import given, settings
 import hypothesis.strategies as st
 import hypothesis.extra.numpy as hnp
 
@@ -14,6 +14,7 @@ from sunode import basic, vector, matrix
 VEC_TYPES = ["serial"]
 
 
+@settings(deadline=500)
 @given(st.integers(), st.sampled_from(VEC_TYPES))
 def test_empty(size, kind):
     try:
