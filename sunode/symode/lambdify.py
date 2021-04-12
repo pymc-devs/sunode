@@ -6,7 +6,7 @@ import sys
 import inspect
 from functools import partial
 
-from sympy.printing.pycode import SciPyPrinter
+from sympy.printing.numpy import SciPyPrinter
 import sympy
 import numpy as np
 
