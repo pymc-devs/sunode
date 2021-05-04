@@ -218,7 +218,7 @@ class SolveODE(Op):
         return [
             aet.zeros_like(inputs[0]),
             aet.sum(g[:, None, :] * sens, (0, -1)),
-            aet.grad_not_implemented(self, 2, inputs[-1])
+            aesara.gradient.grad_not_implemented(self, 2, inputs[-1])
         ]
 
 
@@ -257,7 +257,7 @@ class SolveODEAdjoint(Op):
         y0, params, params_fixed = inputs
         backward = SolveODEAdjointBackward(self._solver, self._t0, self._tvals)
         lamda, gradient = backward(y0, params, params_fixed, g)
-        return [-lamda, gradient, aet.grad_not_implemented(self, 2, params_fixed)]
+        return [-lamda, gradient, aesara.gradient.grad_not_implemented(self, 2, params_fixed)]
 
 
 class SolveODEAdjointBackward(Op):
