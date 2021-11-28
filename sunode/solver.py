@@ -211,46 +211,74 @@ class BaseSolver(Borrows):
 
 
 class Solver:
-    def __init__(self, problem: Problem, *,
-                 abstol: float = 1e-10, reltol: float = 1e-10,
-                 sens_mode: Optional[str] = None, scaling_factors: Optional[np.ndarray] = None,
-                 constraints: Optional[np.ndarray] = None, solver='BDF', linear_solver="dense"):
-        self._problem = problem
-        self._user_data = problem.make_user_data()
-
+    def _init_sundials(self):
         n_states = self._problem.n_states
         n_params = self._problem.n_params
 
         self._state_buffer = sunode.empty_vector(n_states)
         self._state_buffer.data[:] = 0
         self._jac = check(lib.SUNDenseMatrix(n_states, n_states))
-        self._constraints = constraints
 
-        if solver == 'BDF':
-            solver_kind = lib.CV_BDF
-        elif solver == 'ADAMS':
-            solver_kind = lib.CV_ADAMS
-        else:
-            assert False
-        self._ode = check(lib.CVodeCreate(solver_kind))
-        rhs = problem.make_sundials_rhs()
+        self._ode = check(lib.CVodeCreate(self._solver_kind))
+        rhs = self._problem.make_sundials_rhs()
         check(lib.CVodeInit(self._ode, rhs.cffi, 0., self._state_buffer.c_ptr))
 
-        self._set_tolerances(abstol, reltol)
+        self._set_tolerances(self._abstol, self._reltol)
         if self._constraints is not None:
-            assert constraints.shape == (n_states,)
-            self._constraints_vec = sunode.from_numpy(constraints)
+            assert self._constraints.shape == (n_states,)
+            self._constraints_vec = sunode.from_numpy(self._constraints)
             check(lib.CVodeSetConstraints(self._ode, self._constraints_vec.c_ptr))
 
-        self._make_linsol(linear_solver)
+        self._make_linsol(self._linear_solver_kind)
 
         user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(self._user_data.data)))
         check(lib.CVodeSetUserData(self._ode, user_data_p))
 
-        self._compute_sens = sens_mode is not None
+        self._compute_sens = self._sens_mode is not None
         if self._compute_sens:
             sens_rhs = self._problem.make_sundials_sensitivity_rhs()
-            self._init_sens(sens_rhs, sens_mode)
+            self._init_sens(sens_rhs, self._sens_mode)
+
+    def __init__(self, problem: Problem, *,
+                 abstol: float = 1e-10, reltol: float = 1e-10,
+                 sens_mode: Optional[str] = None, scaling_factors: Optional[np.ndarray] = None,
+                 constraints: Optional[np.ndarray] = None, solver='BDF', linear_solver="dense"):
+        self._problem = problem
+        self._user_data = problem.make_user_data()
+        self._constraints = constraints
+
+        self._abstol = abstol
+        self._reltol = reltol
+
+        self._linear_solver_kind = linear_solver
+        self._sens_mode = sens_mode
+
+        if solver == 'BDF':
+            self._solver_kind = lib.CV_BDF
+        elif solver == 'ADAMS':
+            self._solver_kind = lib.CV_ADAMS
+        else:
+            assert False
+
+        self._state_names = [
+            "_problem",
+            "_user_data",
+            "_constraints",
+            "_abstol",
+            "_reltol",
+            "_linear_solver_kind",
+            "_sens_mode",
+            "_solver_kind",
+        ]
+
+        self._init_sundials()
+
+    def __getstate__(self):
+        return {name: self.__dict__[name] for name in self._state_names}
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._init_sundials()
 
     def _make_linsol(self, linear_solver) -> None:
         if linear_solver == "dense":

@@ -18,6 +18,9 @@ Path = Tuple[str, ...]
 Shape = Tuple[int, ...]
 
 
+def _identity(x):
+    return x
+
 class SympyProblem(problem.Problem):
     def __init__(
         self,
@@ -43,7 +46,7 @@ class SympyProblem(problem.Problem):
         self._rhs_sympy_func = rhs_sympy
 
         if simplify is None:
-            simplify = lambda x: x
+            simplify = _identity
         self._simplify = np.vectorize(simplify)
 
         def check_dtype(dtype: np.dtype, path: Optional[str] = None) -> None:
