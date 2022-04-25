@@ -4,9 +4,11 @@ try:
     from aesara.graph.basic import Constant, Variable
     from aesara.graph.fg import MissingInputError
     from aesara.graph.op import Op
+    from aesara.gradient import grad_not_implemented
 except ModuleNotFoundError:
     import theano
     import theano.tensor as aet
+    from theano.gradient import grad_not_implemented
     if hasattr(theano, "gof"):
         from theano.gof.fg import MissingInputError
         from theano.gof.var import Constant, Variable
@@ -218,7 +220,7 @@ class SolveODE(Op):
         return [
             aet.zeros_like(inputs[0]),
             aet.sum(g[:, None, :] * sens, (0, -1)),
-            aesara.gradient.grad_not_implemented(self, 2, inputs[-1])
+            grad_not_implemented(self, 2, inputs[-1])
         ]
 
 
@@ -257,7 +259,7 @@ class SolveODEAdjoint(Op):
         y0, params, params_fixed = inputs
         backward = SolveODEAdjointBackward(self._solver, self._t0, self._tvals)
         lamda, gradient = backward(y0, params, params_fixed, g)
-        return [-lamda, gradient, aesara.gradient.grad_not_implemented(self, 2, params_fixed)]
+        return [-lamda, gradient, grad_not_implemented(self, 2, params_fixed)]
 
 
 class SolveODEAdjointBackward(Op):
