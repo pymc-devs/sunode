@@ -132,7 +132,7 @@ We'll use some time artificial data:
 ```python
 import numpy as np
 import sunode
-import sunode.wrappers.as_theano
+import sunode.wrappers.as_aesara
 import pymc3 as pm
 
 times = np.arange(1900,1921,1)
@@ -184,7 +184,7 @@ with pm.Model() as model:
     gamma = pm.Deterministic('gamma', freq / speed_ratio / ratio)
     delta = pm.Deterministic('delta', freq / speed_ratio / fixed_hares / ratio)
     
-    y_hat, _, problem, solver, _, _ = sunode.wrappers.as_theano.solve_ivp(
+    y_hat, _, problem, solver, _, _ = sunode.wrappers.as_aesara.solve_ivp(
         y0={
 	    # The initial conditions of the ode. Each variable
 	    # needs to specify a theano or numpy variable and a shape.

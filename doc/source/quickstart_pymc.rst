@@ -42,7 +42,7 @@ We'll use some time artificial data:::
 
     import numpy as np
     import sunode
-    import sunode.wrappers.as_theano
+    import sunode.wrappers.as_aesara
     import pymc3 as pm
 
     times = np.arange(1900,1921,1)
@@ -124,7 +124,7 @@ Now, we define the names, (symbolic) values and shapes of the parameters and ini
 We solve the ODE using the ``solve_ivp`` function from sunode::
 
     with model:
-        from sunode.wrappers.as_theano import solve_ivp
+        from sunode.wrappers.as_aesara import solve_ivp
         solution, *_ = solve_ivp(
             y0=y0,
             params=params,
