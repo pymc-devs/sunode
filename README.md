@@ -13,8 +13,8 @@ functions using symbolic differentiation and common subexpression elimination.
 In either case the functions are compiled using numba and the resulting
 C-function is passed to sunode, so that there is no python overhead.
 
-sunode comes with a theano wrapper so that parameters of an ode can be estimated
-using pymc3.
+`sunode` comes with an Aesara wrapper so that parameters of an ODE can be estimated
+using PyMC.
 
 ### Installation
 sunode is available on conda-forge. Set up a conda environment to use conda-forge
@@ -28,8 +28,8 @@ conda config --set channel_priority strict
 conda install sunode
 ```
 
-You can also install the development version. One windows you have to make
-sure the correct visual studio version is install and in the PATH.
+You can also install the development version. On Windows you have to make
+sure the correct Visual Studio version is installed and in the PATH.
 ```
 git clone git@github.com:aseyboldt/sunode
 # Or if no ssh key is configured:
@@ -40,7 +40,7 @@ conda install --only-deps sunode
 pip install -e .
 ```
 
-### Solve an ode outside of a pymc3 model
+### Solve an ODE outside a PyMC model
 
 We will use the Lotka-Volterra equations as an example ODE:
 
@@ -118,22 +118,22 @@ plt.plot(output.view(problem.state_dtype)['hares']
 ```
 
 For this example the BDF solver (which isn't the best solver for a small non-stiff
-example problem like this) takes ~200μs, while the scipy.integrate.solve_ivp solver
-take about 40ms at a tolerance of 1e-10, 1e-10. So we are faster by a factor of 200.
+example problem like this) takes ~200μs, while the `scipy.integrate.solve_ivp` solver
+takes about 40ms at a tolerance of 1e-10, 1e-10. So we are faster by a factor of 200.
 This advantage will get somewhat smaller for large problems however, when the
-python overhead of the ODE solver has a smaller impact.
+Python overhead of the ODE solver has a smaller impact.
 
-### Usage in pymc3
+### Usage in PyMC
 
-Let's use the same ODE, but fit the parameters using pymc3, and gradients
-computed using sunode.
+Let's use the same ODE, but fit the parameters using PyMC, and gradients
+computed using `sunode`.
 
 We'll use some time artificial data:
 ```python
 import numpy as np
 import sunode
 import sunode.wrappers.as_aesara
-import pymc3 as pm
+import pymc as pm
 
 times = np.arange(1900,1921,1)
 lynx_data = np.array([
@@ -164,18 +164,18 @@ def lotka_volterra(t, y, p):
 
 
 with pm.Model() as model:
-    hares_start = pm.HalfNormal('hares_start', sd=50)
-    lynx_start = pm.HalfNormal('lynx_start', sd=50)
+    hares_start = pm.HalfNormal('hares_start', sigma=50)
+    lynx_start = pm.HalfNormal('lynx_start', sigma=50)
     
     ratio = pm.Beta('ratio', alpha=0.5, beta=0.5)
         
-    fixed_hares = pm.HalfNormal('fixed_hares', sd=50)
+    fixed_hares = pm.HalfNormal('fixed_hares', sigma=50)
     fixed_lynx = pm.Deterministic('fixed_lynx', ratio * fixed_hares)
     
-    period = pm.Gamma('period', mu=10, sd=1)
+    period = pm.Gamma('period', mu=10, sigma=1)
     freq = pm.Deterministic('freq', 2 * np.pi / period)
     
-    log_speed_ratio = pm.Normal('log_speed_ratio', mu=0, sd=0.1)
+    log_speed_ratio = pm.Normal('log_speed_ratio', mu=0, sigma=0.1)
     speed_ratio = np.exp(log_speed_ratio)
     
     # Compute the parameters of the ode based on our prior parameters
@@ -217,18 +217,18 @@ with pm.Model() as model:
     pm.Deterministic('lynx_mu', y_hat['lynx'])
     
     sd = pm.HalfNormal('sd')
-    pm.Lognormal('hares', mu=y_hat['hares'], sd=sd, observed=hare_data)
-    pm.Lognormal('lynx', mu=y_hat['lynx'], sd=sd, observed=lynx_data)
+    pm.LogNormal('hares', mu=y_hat['hares'], sigma=sd, observed=hare_data)
+    pm.LogNormal('lynx', mu=y_hat['lynx'], sigma=sd, observed=lynx_data)
 ```
 
-We can sample using pymc3 (You need `cores=1` on windows for the moment):
+We can sample using PyMC (You need `cores=1` on Windows for the moment):
 ```
 with model:
-    trace = pm.sample(tune=1000, draws=1000, chains=6, cores=6)
+    idata = pm.sample(tune=1000, draws=1000, chains=6, cores=6)
 ```
 
 Many solver options can not be specified with a nice interface for now,
-we can call the raw sundials functions howeve:
+we can call the raw sundials functions however:
 
 ```
 lib = sunode._cvodes.lib

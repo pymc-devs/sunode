@@ -27,7 +27,7 @@ through AST manipulation for necessary functions and compile them using numba.
 This allows us to solve an ode repeatetly with almost no python overhead.
 
 The original use-case for this library was better support for solving ODEs
-within bayesian models in PyMC3, but is useable in different contexts as well.
+within bayesian models in PyMC, but is useable in different contexts as well.
 
 Contents
 --------
