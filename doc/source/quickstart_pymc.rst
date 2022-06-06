@@ -1,7 +1,7 @@
-.. _quickstart_pymc3:
+.. _quickstart_pymc:
 
-Quickstart with PyMC3
-=====================
+Quickstart with PyMC
+====================
 
 sunode is available on conda-forge. You can setup an environmet to use conda-forge
 package if you don't have that already, and install sunode:::
@@ -30,7 +30,7 @@ Sampling Bayesian models with Hamiltonian MCMC involving an ODE is where the
 features of sunode shine.  We need to solve the ODE (ofter rather small ODEs) a
 large number of times, so Python overhead will hurt us a lot, and we need to
 compute gradients as well. Sunode provides some utility functions that make it
-easy to include an ODE into a PyMC3 model.  If you want to use it in a
+easy to include an ODE into a PyMC model.  If you want to use it in a
 different context, see :ref:`usage-basic`.
 We will use the Lotka-Volterra equations as example:
 
@@ -43,7 +43,7 @@ We'll use some time artificial data:::
     import numpy as np
     import sunode
     import sunode.wrappers.as_aesara
-    import pymc3 as pm
+    import pymc as pm
 
     times = np.arange(1900,1921,1)
     lynx_data = np.array([
@@ -72,25 +72,25 @@ We also define a function for the right-hand-side of the ODE:::
 
    For more details about how this function behaves, see :ref:`rhs-function`.
 
-In the next step we define priors for our parameters in PyMC3. To illustrate
-that the parameters do not have to be PyMC3 variables themselves, but can also
+In the next step we define priors for our parameters in PyMC. To illustrate
+that the parameters do not have to be PyMC variables themselves, but can also
 be derived though some computations, we put priors not on :math:`\alpha, \beta,
 \gamma` and :math:`\delta`, but on parameters like the frequency of the
 hare-lynx cycle and the steady-state ratio of hares to lynxes.::
 
     with pm.Model() as model:
-        hares_start = pm.HalfNormal('hares_start', sd=50)
-        lynx_start = pm.HalfNormal('lynx_start', sd=50)
+        hares_start = pm.HalfNormal('hares_start', sigma=50)
+        lynx_start = pm.HalfNormal('lynx_start', sigma=50)
 
         ratio = pm.Beta('ratio', alpha=0.5, beta=0.5)
 
-        fixed_hares = pm.HalfNormal('fixed_hares', sd=50)
+        fixed_hares = pm.HalfNormal('fixed_hares', sigma=50)
         fixed_lynx = pm.Deterministic('fixed_lynx', ratio * fixed_hares)
 
-        period = pm.Gamma('period', mu=10, sd=1)
+        period = pm.Gamma('period', mu=10, sigma=1)
         freq = pm.Deterministic('freq', 2 * np.pi / period)
 
-        log_speed_ratio = pm.Normal('log_speed_ratio', mu=0, sd=0.1)
+        log_speed_ratio = pm.Normal('log_speed_ratio', mu=0, sigma=0.1)
         speed_ratio = np.exp(log_speed_ratio)
 
         # Compute the parameters of the ode based on our prior parameters
@@ -143,10 +143,10 @@ We are only missing the likelihood now::
         pm.Deterministic('lynxes_mu', solution['lynxes'])
 
         sd = pm.HalfNormal('sd')
-        pm.Lognormal('hares', mu=solution['hares'], sd=sd, observed=hare_data)
-        pm.Lognormal('lynxes', mu=solution['lynxes'], sd=sd, observed=lynx_data)
+        pm.LogNormal('hares', mu=solution['hares'], sigma=sd, observed=hare_data)
+        pm.LogNormal('lynxes', mu=solution['lynxes'], sigma=sd, observed=lynx_data)
 
-We can sample from the posterior with the gradient-based PyMC3 samplers:::
+We can sample from the posterior with the gradient-based PyMC samplers:::
 
     with model:
         trace = pm.sample()
@@ -161,3 +161,4 @@ This is the default on Linux, but on Mac it has to be specified manually::
 
 Windows does not support this at all. You can however disable parallel sampling
 by setting ``cores=1`` in ``pm.sample()``.
+diff --git a/doc/source/quickstart_pymc3.rst b/doc/source/quickstart_pymc3.rst

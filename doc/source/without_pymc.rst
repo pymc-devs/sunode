@@ -12,7 +12,7 @@ current number, and die when eaten by a lynx. We get:
 .. math::
    \frac{dH}{dt} = \alpha H - \beta LH \\ \frac{dL}{dt} = \delta LH - \gamma L
 
-If we want to solve this ODE without the support of theano or PyMC3, we need to
+If we want to solve this ODE without the support of Aesara or PyMC, we need to
 first declare the parameters and states we are using. We have four parameters
 and two states, and each one is a scalar values, so it has shape ()::
 
