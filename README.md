@@ -45,8 +45,10 @@ pip install -e .
 We will use the Lotka-Volterra equations as an example ODE:
 
 $$
-\freq{dH}{dt} = \alpha H - \beta LH\\
-\freq{dL}{dt} = \delta LH - \gamma L
+\begin{gather}
+\frac{dH}{dt} = \alpha H - \beta LH\\
+\frac{dL}{dt} = \delta LH - \gamma L
+\end{gather}
 $$
 
 ```python
