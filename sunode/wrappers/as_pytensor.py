@@ -53,14 +53,14 @@ def solve_ivp(
                 tensor, dim_names = vals
             else:
                 try:
-                    tensor, dim_names = vals, pt.as_tensor_variable(vals).shape.eval()
+                    tensor, dim_names = vals, pt.as_tensor_variable(vals, dtype="float64").shape.eval()
                 except MissingInputError as e:
                     raise ValueError(
                         'Shapes of tensors need to be statically '
                         'known or given explicitly.') from e
             if isinstance(dim_names, (str, int)):
                 dim_names = (dim_names,)
-            tensor = pt.as_tensor_variable(tensor)
+            tensor = pt.as_tensor_variable(tensor, dtype="float64")
             if tensor.ndim != len(dim_names):
                 raise ValueError(
                     f"Dimension mismatch for {name}: Value has rank {tensor.ndim}, "
@@ -97,22 +97,22 @@ def solve_ivp(
         tensor = flat_tensors[path]
         if isinstance(tensor, tuple):
             tensor, _ = tensor
-        vars.append(pt.as_tensor_variable(tensor).reshape((-1,)))
+        vars.append(pt.as_tensor_variable(tensor, dtype="float64").reshape((-1,)))
     if vars:
         params_subs_flat = pt.concatenate(vars)
     else:
-        params_subs_flat = pt.as_tensor_variable(np.zeros(0))
+        params_subs_flat = pt.as_tensor_variable(np.zeros(0), dtype="float64")
 
     vars = []
     for path in problem.params_subset.remainder.subset_paths:
         tensor = flat_tensors[path]
         if isinstance(tensor, tuple):
             tensor, _ = tensor
-        vars.append(pt.as_tensor_variable(tensor).reshape((-1,)))
+        vars.append(pt.as_tensor_variable(tensor, dtype="float64").reshape((-1,)))
     if vars:
         params_remaining_flat = pt.concatenate(vars)
     else:
-        params_remaining_flat = pt.as_tensor_variable(np.zeros(0))
+        params_remaining_flat = pt.as_tensor_variable(np.zeros(0), dtype="float64")
 
     flat_tensors = as_flattened(y0)
     vars = []
@@ -120,7 +120,7 @@ def solve_ivp(
         tensor = flat_tensors[path]
         if isinstance(tensor, tuple):
             tensor, _ = tensor
-        vars.append(pt.as_tensor_variable(tensor).reshape((-1,)))
+        vars.append(pt.as_tensor_variable(tensor, dtype="float64").reshape((-1,)))
     y0_flat = pt.concatenate(vars)
 
     if derivatives == 'adjoint':
@@ -260,6 +260,25 @@ class SolveODEAdjointBackward(Op):
     otypes = [pt.dvector, pt.dvector]
 
     __props__ = ('_solver_id', '_t0', '_tvals_id')
+
+    def make_nodes(self, *inputs):
+        if len(inputs) != len(self.itypes):
+            raise ValueError(
+                f"We expected {len(self.itypes)} inputs but got {len(inputs)}."
+            )
+        if not all(it.in_same_class(inp.type) for inp, it in zip(inputs, self.itypes)):
+            raise TypeError(
+                f"Invalid input types for Op {self}:\n"
+                + "\n".join(
+                    f"Input {i}/{len(inputs)}: Expected {inp}, got {out}"
+                    for i, (inp, out) in enumerate(
+                        zip(self.itypes, (inp.type for inp in inputs)),
+                        start=1,
+                    )
+                    if inp != out
+                )
+            )
+        return Apply(self, inputs, [o() for o in self.otypes])
 
     def __init__(self, solver, t0, tvals):
         self._solver = solver

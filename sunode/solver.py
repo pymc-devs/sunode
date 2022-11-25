@@ -221,7 +221,11 @@ class Solver:
 
         self._ode = check(lib.CVodeCreate(self._solver_kind))
         rhs = self._problem.make_sundials_rhs()
+        self._rhs = rhs
         check(lib.CVodeInit(self._ode, rhs.cffi, 0., self._state_buffer.c_ptr))
+
+        user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(self._user_data.data)))
+        check(lib.CVodeSetUserData(self._ode, user_data_p))
 
         self._set_tolerances(self._abstol, self._reltol)
         if self._constraints is not None:
@@ -230,9 +234,6 @@ class Solver:
             check(lib.CVodeSetConstraints(self._ode, self._constraints_vec.c_ptr))
 
         self._make_linsol(self._linear_solver_kind)
-
-        user_data_p = ffi.cast('void *', ffi.addressof(ffi.from_buffer(self._user_data.data)))
-        check(lib.CVodeSetUserData(self._ode, user_data_p))
 
         self._compute_sens = self._sens_mode is not None
         if self._compute_sens:
@@ -340,15 +341,20 @@ class Solver:
     def _set_tolerances(self, atol=None, rtol=None):
         atol = np.array(atol)
         rtol = np.array(rtol)
+        n_states = self._problem.n_states
         if atol.ndim == 1 and rtol.ndim == 1:
             atol = sunode.from_numpy(atol)
             rtol = sunode.from_numpy(rtol)
+            assert atol.shape == (n_states,)
+            assert rtol.shape == (n_states,)
             check(lib.CVodeVVtolerances(self._ode, rtol.c_ptr, atol.c_ptr))
         elif atol.ndim == 1 and rtol.ndim == 0:
             atol = sunode.from_numpy(atol)
+            assert atol.shape == (n_states,)
             check(lib.CVodeSVtolerances(self._ode, rtol, atol.c_ptr))
         elif atol.ndim == 0 and rtol.ndim == 1:
             rtol = sunode.from_numpy(rtol)
+            assert rtol.shape == (n_states,)
             check(lib.CVodeVStolerances(self._ode, rtol.c_ptr, atol))
         elif atol.ndim == 0 and rtol.ndim == 0:
             check(lib.CVodeSStolerances(self._ode, rtol, atol))
@@ -416,6 +422,7 @@ class Solver:
         TOO_MUCH_WORK = lib.CV_TOO_MUCH_WORK
 
         n_params = self._problem.n_params
+        n_states = self._problem.n_states
 
         state_data = self._state_buffer.data
         state_c_ptr = self._state_buffer.c_ptr
@@ -428,6 +435,9 @@ class Solver:
 
         if y0.dtype == self._problem.state_dtype:
             y0 = y0[None].view(np.float64)
+
+        if y0.shape != (n_states,):
+            raise ValueError(f"y0 should have shape {(n_states,)} but has shape {y0.shape}.")
         state_data[:] = y0
 
         time_p = ffi.new('double*')
