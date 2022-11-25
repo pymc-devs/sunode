@@ -49,7 +49,7 @@ class Problem(Protocol):
         return NotImplemented
 
     def make_user_data(self) -> np.ndarray:
-        return np.recarray((), dtype=self.user_data_dtype)
+        return np.zeros((), dtype=self.user_data_dtype).view(np.recarray)
 
     def update_params(self, user_data: np.ndarray, params: np.ndarray) -> None:
         if not self.user_data_dtype == self.params_dtype:
@@ -166,10 +166,14 @@ class Problem(Protocol):
         func_type = numba.core.typing.cffi_utils.map_type(ffi.typeof('CVRhsFn'))
         func_type = func_type.return_type(*(func_type.args[:-1] + (user_ndtype_p,)))
 
+        n_states = self.n_states
+
         @numba.cfunc(func_type)
         def rhs_wrapper(t, y_, out_, user_data_):  # type: ignore
             y_ptr = N_VGetArrayPointer_Serial(y_)
             n_vars = N_VGetLength_Serial(y_)
+            if n_vars != n_states:
+                return -1
             out_ptr = N_VGetArrayPointer_Serial(out_)
             y = numba.carray(y_ptr, (n_vars,)).view(state_dtype)[0]
             out = numba.carray(out_ptr, (n_vars,))
