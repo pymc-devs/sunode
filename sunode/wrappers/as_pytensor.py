@@ -123,18 +123,21 @@ def solve_ivp(
         vars.append(pt.as_tensor_variable(tensor, dtype="float64").reshape((-1,)))
     y0_flat = pt.concatenate(vars)
 
+    t0 = pt.as_tensor_variable(t0, dtype="float64")
+    tvals = pt.as_tensor_variable(tvals, dtype="float64")
+
     if derivatives == 'adjoint':
         sol = solver.AdjointSolver(problem, **solver_kwargs)
-        wrapper = SolveODEAdjoint(sol, t0, tvals)
-        flat_solution = wrapper(y0_flat, params_subs_flat, params_remaining_flat)
+        wrapper = SolveODEAdjoint(sol)
+        flat_solution = wrapper(y0_flat, params_subs_flat, params_remaining_flat, t0, tvals)
         solution = problem.flat_solution_as_dict(flat_solution)
         return solution, flat_solution, problem, sol, y0_flat, params_subs_flat
     elif derivatives == 'forward':
         if not "sens_mode" in solver_kwargs:
             raise ValueError("When `derivatives=True`, the `solver_kwargs` must contain one of `sens_mode={\"simultaneous\" | \"staggered\"}`.")
         sol = solver.Solver(problem, **solver_kwargs)
-        wrapper = SolveODE(sol, t0, tvals)
-        flat_solution, flat_sens = wrapper(y0_flat, params_subs_flat, params_remaining_flat)
+        wrapper = SolveODE(sol)
+        flat_solution, flat_sens = wrapper(y0_flat, params_subs_flat, params_remaining_flat, t0, tvals)
         solution = problem.flat_solution_as_dict(flat_solution)
         return solution, flat_solution, problem, sol, y0_flat, params_subs_flat, flat_sens, wrapper
     elif derivatives in [None, False]:
@@ -142,19 +145,64 @@ def solve_ivp(
         assert False
 
 
-class SolveODE(Op):
-    itypes = [pt.dvector, pt.dvector, pt.dvector]
-    otypes = [pt.dmatrix, pt.dtensor3]
-    
-    __props__ = ('_solver_id', '_t0', '_tvals_id')
-    
-    def __init__(self, solver, t0, tvals):
+class EvalRhs(Op):
+    # params, params_fixed, y, tvals
+    itypes = [pt.dvector, pt.dvector, pt.dmatrix, pt.dvector]
+    otypes = [pt.dmatrix]
+
+    __props__ = ('_solver_id',)
+
+    def __init__(self, solver):
         self._solver = solver
-        self._t0 = t0
-        self._y_out, self._sens_out = solver.make_output_buffers(tvals)
-        self._tvals = tvals
         self._solver_id = id(solver)
-        self._tvals_id = id(self._tvals)
+
+        self._deriv_dtype = self._solver.derivative_params_dtype
+        self._fixed_dtype = self._solver.remainder_params_dtype
+
+        # We only compile this when it is used, because we only need
+        # to evaluate this op if we need derivative with respect to
+        # the solution evaluation time points, and that should be
+        # a small minority of use cases.
+        self._rhs = None
+
+    def perform(self, node, inputs, outputs):
+        params, params_fixed, y, tvals = inputs
+
+        if self._rhs is None:
+            self._rhs = self._solver._problem.make_rhs()
+
+        self._solver.set_derivative_params(params.view(self._deriv_dtype)[0])
+        self._solver.set_remaining_params(params_fixed.view(self._fixed_dtype)[0])
+
+        ok = True
+        retcode = 0
+        out = np.empty((len(tvals), self._solver._problem.n_states))
+        for i, t in enumerate(tvals):
+            retcode = self._rhs(
+                out[i],
+                t,
+                y[i].view(self._solver._problem.state_dtype)[0],
+                np.array(self._solver._user_data)[()]
+            )
+            ok = ok and not retcode
+        if not ok:
+            raise ValueError(f"Bad ode rhs return code: {retcode}")
+
+        outputs[0][0] = out
+
+
+class SolveODE(Op):
+    # y0, params, params_fixed, t0, tvals
+    itypes = [pt.dvector, pt.dvector, pt.dvector, pt.dscalar, pt.dvector]
+    # y_out, y_sens_out
+    otypes = [pt.dmatrix, pt.dtensor3]
+
+    __props__ = ('_solver_id',)
+
+    def __init__(self, solver):
+        self._solver = solver
+        self._solver_id = id(solver)
+
         self._deriv_dtype = self._solver.derivative_params_dtype
         self._fixed_dtype = self._solver.remainder_params_dtype
 
@@ -190,108 +238,101 @@ class SolveODE(Op):
         self._sens0 = sens0.reshape((n_params, n_states))
 
     def perform(self, node, inputs, outputs):
-        y0, params, params_fixed = inputs
+        y0, params, params_fixed, t0, tvals = inputs
+        y_out, sens_out = self._solver.make_output_buffers(tvals)
 
         self._solver.set_derivative_params(params.view(self._deriv_dtype)[0])
         self._solver.set_remaining_params(params_fixed.view(self._fixed_dtype)[0])
 
         try:
-            self._solver.solve(self._t0, self._tvals, y0, self._y_out,
-                            sens0=self._sens0, sens_out=self._sens_out)
+            self._solver.solve(
+                t0, tvals, y0, y_out,
+                sens0=self._sens0, sens_out=sens_out
+            )
         except SolverError:
-            self._y_out[...] = np.nan
-            self._sens_out[...] = np.nan
-        
-        outputs[0][0] = self._y_out.copy()
-        outputs[1][0] = self._sens_out.copy()
+            y_out[...] = np.nan
+            sens_out[...] = np.nan
+
+        outputs[0][0] = y_out
+        outputs[1][0] = sens_out
 
     def grad(self, inputs, g):
         g, g_grad = g
-        
+        _, params, params_fixed, t0, tvals = inputs
+
         assert str(g_grad) == '<DisconnectedType>'
         solution, sens = self(*inputs)
         return [
             pt.zeros_like(inputs[0]),
             pt.sum(g[:, None, :] * sens, (0, -1)),
-            grad_not_implemented(self, 2, inputs[-1])
+            grad_not_implemented(self, 2, params_fixed),
+            grad_not_implemented(self, 3, t0),
+            (EvalRhs(self._solver)(params, params_fixed, solution, tvals) * g).sum(-1),
         ]
 
 
 class SolveODEAdjoint(Op):
-    itypes = [pt.dvector, pt.dvector, pt.dvector]
+    # y0, params, params_fixed, t0, tvals
+    itypes = [pt.dvector, pt.dvector, pt.dvector, pt.dscalar, pt.dvector]
     otypes = [pt.dmatrix]
 
-    __props__ = ('_solver_id', '_t0', '_tvals_id')
+    __props__ = ('_solver_id',)
 
-    def __init__(self, solver, t0, tvals):
+    def __init__(self, solver):
         self._solver = solver
-        self._t0 = t0
-        self._y_out, self._grad_out, self._lamda_out = solver.make_output_buffers(tvals)
-        self._tvals = tvals
         self._solver_id = id(solver)
-        self._tvals_id = id(self._tvals)
         self._deriv_dtype = self._solver.derivative_params_dtype
         self._fixed_dtype = self._solver.remainder_params_dtype
 
     def perform(self, node, inputs, outputs):
-        y0, params, params_fixed = inputs
+        y0, params, params_fixed, t0, tvals = inputs
+
+        y_out, grad_out, lamda_out = self._solver.make_output_buffers(tvals)
 
         self._solver.set_derivative_params(params.view(self._deriv_dtype)[0])
         self._solver.set_remaining_params(params_fixed.view(self._fixed_dtype)[0])
 
         try:
-            self._solver.solve_forward(self._t0, self._tvals, y0, self._y_out)
+            self._solver.solve_forward(t0, tvals, y0, y_out)
         except SolverError as e:
-            self._y_out[:] = np.nan
+            y_out[:] = np.nan
 
-        outputs[0][0] = self._y_out.copy()
+        outputs[0][0] = y_out.copy()
 
     def grad(self, inputs, g):
         g, = g
 
-        y0, params, params_fixed = inputs
-        backward = SolveODEAdjointBackward(self._solver, self._t0, self._tvals)
-        lamda, gradient = backward(y0, params, params_fixed, g)
-        return [-lamda, gradient, grad_not_implemented(self, 2, params_fixed)]
+        y0, params, params_fixed, t0, tvals = inputs
+        solution = self(*inputs)
+        backward = SolveODEAdjointBackward(self._solver)
+        lamda, gradient = backward(y0, params, params_fixed, g, t0, tvals)
+
+        return [
+            -lamda,
+            gradient,
+            grad_not_implemented(self, 2, params_fixed),
+            grad_not_implemented(self, 3, t0),
+            (EvalRhs(self._solver)(params, params_fixed, solution, tvals) * g).sum(-1),
+        ]
 
 
 class SolveODEAdjointBackward(Op):
-    itypes = [pt.dvector, pt.dvector, pt.dvector, pt.dmatrix]
+    # y0, params, params_fixed, g, t0, tvals
+    itypes = [pt.dvector, pt.dvector, pt.dvector, pt.dmatrix, pt.dscalar, pt.dvector]
     otypes = [pt.dvector, pt.dvector]
 
-    __props__ = ('_solver_id', '_t0', '_tvals_id')
+    __props__ = ('_solver_id',)
 
-    def make_nodes(self, *inputs):
-        if len(inputs) != len(self.itypes):
-            raise ValueError(
-                f"We expected {len(self.itypes)} inputs but got {len(inputs)}."
-            )
-        if not all(it.in_same_class(inp.type) for inp, it in zip(inputs, self.itypes)):
-            raise TypeError(
-                f"Invalid input types for Op {self}:\n"
-                + "\n".join(
-                    f"Input {i}/{len(inputs)}: Expected {inp}, got {out}"
-                    for i, (inp, out) in enumerate(
-                        zip(self.itypes, (inp.type for inp in inputs)),
-                        start=1,
-                    )
-                    if inp != out
-                )
-            )
-        return Apply(self, inputs, [o() for o in self.otypes])
-
-    def __init__(self, solver, t0, tvals):
+    def __init__(self, solver):
         self._solver = solver
-        self._t0 = t0
-        self._y_out, self._grad_out, self._lamda_out = solver.make_output_buffers(tvals)
-        self._tvals = tvals
         self._solver_id = id(solver)
-        self._tvals_id = id(self._tvals)
         self._deriv_dtype = self._solver.derivative_params_dtype
         self._fixed_dtype = self._solver.remainder_params_dtype
 
     def perform(self, node, inputs, outputs):
-        y0, params, params_fixed, grads = inputs
+        y0, params, params_fixed, grads, t0, tvals = inputs
+
+        y_out, grad_out, lamda_out = self._solver.make_output_buffers(tvals)
 
         self._solver.set_derivative_params(params.view(self._deriv_dtype)[0])
         self._solver.set_remaining_params(params_fixed.view(self._fixed_dtype)[0])
@@ -300,12 +341,12 @@ class SolveODEAdjointBackward(Op):
         # that it was executed previously, but it isn't very expensive
         # compared with the backward pass anyway.
         try:
-            self._solver.solve_forward(self._t0, self._tvals, y0, self._y_out)
-            self._solver.solve_backward(self._tvals[-1], self._t0, self._tvals,
-                                        grads, self._grad_out, self._lamda_out)
+            self._solver.solve_forward(t0, tvals, y0, y_out)
+            self._solver.solve_backward(tvals[-1], t0, tvals,
+                                        grads, grad_out, lamda_out)
         except SolverError as e:
-            self._lamda_out[:] = np.nan
-            self._grad_out[:] = np.nan
+            lamda_out[:] = np.nan
+            grad_out[:] = np.nan
 
-        outputs[0][0] = self._lamda_out.copy()
-        outputs[1][0] = self._grad_out.copy()
+        outputs[0][0] = lamda_out
+        outputs[1][0] = grad_out
