@@ -16,7 +16,7 @@ def test_nodiff_params():
     A.tag.test_value = np.array(0.9)
 
 
-    time = np.linspace(0, 1)
+    time = pt.linspace(0, 1, 5)
 
     y0 = {
         'A': (A, ()),
@@ -24,9 +24,11 @@ def test_nodiff_params():
         'C': np.array(1.)
     }
 
+    beta = pt.dscalar("beta")
+
     params = {
         'alpha': np.array(1.),
-        'beta': np.array(1.),
+        'beta': beta,
         'extra': np.array([0.])
     }
 
@@ -35,10 +37,28 @@ def test_nodiff_params():
         params=params,
         rhs=dydt_dict,
         tvals=time,
-        t0=time[0],
+        t0=0.,
         derivatives="forward",
         solver_kwargs=dict(sens_mode="simultaneous")
     )
 
-    func = pytensor.function([A], [solution["A"], solution["B"]])
-    assert func(0.2)[0].shape == time.shape
+    grad = pt.grad(solution["A"].sum(), time)
+
+    func = pytensor.function([A, beta], [solution["A"], solution["B"], grad])
+    assert func(0.2, 1.)[0].shape == (5,)
+    assert func(0.2, 1.)[2].shape == (5,)
+
+    solution, *_ = sunode.wrappers.as_pytensor.solve_ivp(
+        y0=y0,
+        params=params,
+        rhs=dydt_dict,
+        tvals=time,
+        t0=0.,
+        derivatives="adjoint",
+    )
+
+    grad = pt.grad(solution["A"].sum(), time)
+
+    func = pytensor.function([A, beta], [solution["A"], solution["B"], grad])
+    assert func(0.2, 1.)[0].shape == (5,)
+    assert func(0.2, 1.)[2].shape == (5,)
