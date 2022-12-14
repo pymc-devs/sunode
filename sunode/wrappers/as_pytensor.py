@@ -1,22 +1,15 @@
 try:
-    import aesara
-    import aesara.tensor as aet
+    import pytensor.tensor as pt
+    from pytensor.graph.basic import Constant, Variable
+    from pytensor.graph.fg import MissingInputError
+    from pytensor.graph.op import Op
+    from pytensor.gradient import grad_not_implemented
+except ModuleNotFoundError:
+    import aesara.tensor as pt
     from aesara.graph.basic import Constant, Variable
     from aesara.graph.fg import MissingInputError
     from aesara.graph.op import Op
     from aesara.gradient import grad_not_implemented
-except ModuleNotFoundError:
-    import theano
-    import theano.tensor as aet
-    from theano.gradient import grad_not_implemented
-    if hasattr(theano, "gof"):
-        from theano.gof.fg import MissingInputError
-        from theano.gof.var import Constant, Variable
-        from theano.gof.op import Op
-    else:
-        from theano.graph.basic import Constant, Variable
-        from theano.graph.fg import MissingInputError
-        from theano.graph.op import Op
 import copy
 from typing import Dict, Optional, Any, Callable
 
@@ -60,14 +53,14 @@ def solve_ivp(
                 tensor, dim_names = vals
             else:
                 try:
-                    tensor, dim_names = vals, aet.as_tensor_variable(vals).shape.eval()
+                    tensor, dim_names = vals, pt.as_tensor_variable(vals).shape.eval()
                 except MissingInputError as e:
                     raise ValueError(
                         'Shapes of tensors need to be statically '
                         'known or given explicitly.') from e
             if isinstance(dim_names, (str, int)):
                 dim_names = (dim_names,)
-            tensor = aet.as_tensor_variable(tensor)
+            tensor = pt.as_tensor_variable(tensor)
             if tensor.ndim != len(dim_names):
                 raise ValueError(
                     f"Dimension mismatch for {name}: Value has rank {tensor.ndim}, "
@@ -104,22 +97,22 @@ def solve_ivp(
         tensor = flat_tensors[path]
         if isinstance(tensor, tuple):
             tensor, _ = tensor
-        vars.append(aet.as_tensor_variable(tensor).reshape((-1,)))
+        vars.append(pt.as_tensor_variable(tensor).reshape((-1,)))
     if vars:
-        params_subs_flat = aet.concatenate(vars)
+        params_subs_flat = pt.concatenate(vars)
     else:
-        params_subs_flat = aet.as_tensor_variable(np.zeros(0))
+        params_subs_flat = pt.as_tensor_variable(np.zeros(0))
 
     vars = []
     for path in problem.params_subset.remainder.subset_paths:
         tensor = flat_tensors[path]
         if isinstance(tensor, tuple):
             tensor, _ = tensor
-        vars.append(aet.as_tensor_variable(tensor).reshape((-1,)))
+        vars.append(pt.as_tensor_variable(tensor).reshape((-1,)))
     if vars:
-        params_remaining_flat = aet.concatenate(vars)
+        params_remaining_flat = pt.concatenate(vars)
     else:
-        params_remaining_flat = aet.as_tensor_variable(np.zeros(0))
+        params_remaining_flat = pt.as_tensor_variable(np.zeros(0))
 
     flat_tensors = as_flattened(y0)
     vars = []
@@ -127,8 +120,8 @@ def solve_ivp(
         tensor = flat_tensors[path]
         if isinstance(tensor, tuple):
             tensor, _ = tensor
-        vars.append(aet.as_tensor_variable(tensor).reshape((-1,)))
-    y0_flat = aet.concatenate(vars)
+        vars.append(pt.as_tensor_variable(tensor).reshape((-1,)))
+    y0_flat = pt.concatenate(vars)
 
     if derivatives == 'adjoint':
         sol = solver.AdjointSolver(problem, **solver_kwargs)
@@ -150,8 +143,8 @@ def solve_ivp(
 
 
 class SolveODE(Op):
-    itypes = [aet.dvector, aet.dvector, aet.dvector]
-    otypes = [aet.dmatrix, aet.dtensor3]
+    itypes = [pt.dvector, pt.dvector, pt.dvector]
+    otypes = [pt.dmatrix, pt.dtensor3]
     
     __props__ = ('_solver_id', '_t0', '_tvals_id')
     
@@ -218,15 +211,15 @@ class SolveODE(Op):
         assert str(g_grad) == '<DisconnectedType>'
         solution, sens = self(*inputs)
         return [
-            aet.zeros_like(inputs[0]),
-            aet.sum(g[:, None, :] * sens, (0, -1)),
+            pt.zeros_like(inputs[0]),
+            pt.sum(g[:, None, :] * sens, (0, -1)),
             grad_not_implemented(self, 2, inputs[-1])
         ]
 
 
 class SolveODEAdjoint(Op):
-    itypes = [aet.dvector, aet.dvector, aet.dvector]
-    otypes = [aet.dmatrix]
+    itypes = [pt.dvector, pt.dvector, pt.dvector]
+    otypes = [pt.dmatrix]
 
     __props__ = ('_solver_id', '_t0', '_tvals_id')
 
@@ -263,8 +256,8 @@ class SolveODEAdjoint(Op):
 
 
 class SolveODEAdjointBackward(Op):
-    itypes = [aet.dvector, aet.dvector, aet.dvector, aet.dmatrix]
-    otypes = [aet.dvector, aet.dvector]
+    itypes = [pt.dvector, pt.dvector, pt.dvector, pt.dmatrix]
+    otypes = [pt.dvector, pt.dvector]
 
     __props__ = ('_solver_id', '_t0', '_tvals_id')
 

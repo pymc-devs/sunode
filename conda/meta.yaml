@@ -42,7 +42,7 @@ test:
     - pytest
     - hypothesis
     - statsmodels
-    - aesara
+    - pytensor
   commands:
     - pytest --pyargs sunode
 

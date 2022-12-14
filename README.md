@@ -13,7 +13,7 @@ functions using symbolic differentiation and common subexpression elimination.
 In either case the functions are compiled using numba and the resulting
 C-function is passed to sunode, so that there is no python overhead.
 
-`sunode` comes with an Aesara wrapper so that parameters of an ODE can be estimated
+`sunode` comes with an PyTensor wrapper so that parameters of an ODE can be estimated
 using PyMC.
 
 ### Installation
@@ -134,7 +134,7 @@ We'll use some time artificial data:
 ```python
 import numpy as np
 import sunode
-import sunode.wrappers.as_aesara
+import sunode.wrappers.as_pytensor
 import pymc as pm
 
 times = np.arange(1900,1921,1)
@@ -186,17 +186,17 @@ with pm.Model() as model:
     gamma = pm.Deterministic('gamma', freq / speed_ratio / ratio)
     delta = pm.Deterministic('delta', freq / speed_ratio / fixed_hares / ratio)
     
-    y_hat, _, problem, solver, _, _ = sunode.wrappers.as_aesara.solve_ivp(
+    y_hat, _, problem, solver, _, _ = sunode.wrappers.as_pytensor.solve_ivp(
         y0={
 	    # The initial conditions of the ode. Each variable
-	    # needs to specify a theano or numpy variable and a shape.
+	    # needs to specify a PyTensor or numpy variable and a shape.
 	    # This dict can be nested.
             'hares': (hares_start, ()),
             'lynx': (lynx_start, ()),
         },
         params={
 	    # Each parameter of the ode. sunode will only compute derivatives
-	    # with respect to theano variables. The shape needs to be specified
+	    # with respect to PyTensor variables. The shape needs to be specified
 	    # as well. It it infered automatically for numpy variables.
 	    # This dict can be nested.
             'alpha': (alpha, ()),
