@@ -12,7 +12,7 @@ current number, and die when eaten by a lynx. We get:
 .. math::
    \frac{dH}{dt} = \alpha H - \beta LH \\ \frac{dL}{dt} = \delta LH - \gamma L
 
-If we want to solve this ODE without the support of Aesara or PyMC, we need to
+If we want to solve this ODE without the support of PyTensor or PyMC, we need to
 first declare the parameters and states we are using. We have four parameters
 and two states, and each one is a scalar values, so it has shape ()::
 
@@ -71,7 +71,7 @@ ODE might look like this::
    This right-hand-side function is usually only called once to collect the
    sympy expressions of the derivatives. Control flow within this function
    might behave in unexpected ways if you are new to this concept. It is the
-   same thing as with theano, pytorch or tensorflow in graph mode. This means
+   same thing as with PyTensor, pytorch or tensorflow in graph mode. This means
    that something like this will **not** work as expected::
 
        value = 1

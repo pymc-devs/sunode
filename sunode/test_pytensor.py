@@ -1,6 +1,6 @@
 import numpy as np
-import aesara
-import aesara.tensor as aet
+import pytensor
+import pytensor.tensor as pt
 
 import sunode.wrappers
 
@@ -12,7 +12,7 @@ def test_nodiff_params():
             'B': y.B,
             'C': y.C,
         }
-    A = aet.dscalar("A")
+    A = pt.dscalar("A")
     A.tag.test_value = np.array(0.9)
 
 
@@ -30,7 +30,7 @@ def test_nodiff_params():
         'extra': np.array([0.])
     }
 
-    solution, *_ = sunode.wrappers.as_aesara.solve_ivp(
+    solution, *_ = sunode.wrappers.as_pytensor.solve_ivp(
         y0=y0,
         params=params,
         rhs=dydt_dict,
@@ -40,5 +40,5 @@ def test_nodiff_params():
         solver_kwargs=dict(sens_mode="simultaneous")
     )
 
-    func = aesara.function([A], [solution["A"], solution["B"]])
+    func = pytensor.function([A], [solution["A"], solution["B"]])
     assert func(0.2)[0].shape == time.shape

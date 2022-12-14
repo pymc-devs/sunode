@@ -28,7 +28,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install Dependences
       run: |
-        conda install --yes conda-build conda-verify pytest pytest-cov hypothesis statsmodels aesara c-compiler
+        conda install --yes conda-build conda-verify pytest pytest-cov hypothesis statsmodels pytensor c-compiler
     - name: Build package
       run: |
         conda build --variants "{python: [${{ matrix.python-version }}]}" ./sunode/conda
