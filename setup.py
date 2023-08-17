@@ -20,7 +20,7 @@ setup(
     author='Adrian Seyboldt',
     author_email='adrian.seyboldt@gmail.com',
     description='Python wrapper of sundials for solving ordinary differential equations',
-    url='https://github.com/aseyboldt/sunode',
+    url='https://github.com/pymc-devs/sunode',
     setup_requires=["cffi>=1.0.0"],
     cffi_modules=[
         "sunode/build_cvodes.py:ffibuilder",

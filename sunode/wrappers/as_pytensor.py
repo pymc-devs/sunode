@@ -1,15 +1,8 @@
-try:
-    import pytensor.tensor as pt
-    from pytensor.graph.basic import Constant, Variable
-    from pytensor.graph.fg import MissingInputError
-    from pytensor.graph.op import Op
-    from pytensor.gradient import grad_not_implemented
-except ModuleNotFoundError:
-    import aesara.tensor as pt
-    from aesara.graph.basic import Constant, Variable
-    from aesara.graph.fg import MissingInputError
-    from aesara.graph.op import Op
-    from aesara.gradient import grad_not_implemented
+import pytensor.tensor as pt
+from pytensor.graph.basic import Constant, Variable
+from pytensor.graph.fg import MissingInputError
+from pytensor.graph.op import Op
+from pytensor.gradient import grad_not_implemented
 import copy
 from typing import Dict, Optional, Any, Callable
 
