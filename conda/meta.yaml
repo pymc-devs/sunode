@@ -34,6 +34,7 @@ requirements:
     - numba >=0.49
     - typing_extensions
     - sympy >=1.8
+    - {{ pin_compatible("numpy") }}
 
 test:
   imports:
