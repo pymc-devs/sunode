@@ -1,15 +1,8 @@
-try:
-    import pytensor.tensor as pt
-    from pytensor.graph.basic import Constant, Variable
-    from pytensor.graph.fg import MissingInputError
-    from pytensor.graph.op import Op
-    from pytensor.gradient import grad_not_implemented
-except ModuleNotFoundError:
-    import aesara.tensor as pt
-    from aesara.graph.basic import Constant, Variable
-    from aesara.graph.fg import MissingInputError
-    from aesara.graph.op import Op
-    from aesara.gradient import grad_not_implemented
+import pytensor.tensor as pt
+from pytensor.graph.basic import Constant, Variable
+from pytensor.graph.fg import MissingInputError
+from pytensor.graph.op import Op
+from pytensor.gradient import grad_not_implemented
 import copy
 from typing import Dict, Optional, Any, Callable
 
@@ -52,12 +45,11 @@ def solve_ivp(
             if isinstance(vals, tuple):
                 tensor, dim_names = vals
             else:
-                try:
-                    tensor, dim_names = vals, pt.as_tensor_variable(vals, dtype="float64").shape.eval()
-                except MissingInputError as e:
+                tensor, dim_names = vals, pt.as_tensor_variable(vals, dtype="float64").type.shape
+                if any(d is None for d in dim_names):
                     raise ValueError(
-                        'Shapes of tensors need to be statically '
-                        'known or given explicitly.') from e
+                        'Shapes of tensors need to be statically known or given explicitly.'
+                    )
             if isinstance(dim_names, (str, int)):
                 dim_names = (dim_names,)
             tensor = pt.as_tensor_variable(tensor, dtype="float64")

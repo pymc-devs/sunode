@@ -20,18 +20,16 @@ requirements:
   host:
     - python
     - pip
-    - numpy >=1.14
     - liblapack
     - cffi
     - sundials >=5.3,<6.0
   run:
     - python
-    - numpy >=1.14
     - cffi
     - xarray
     - scipy
     - sundials >=5.3,<6.0
-    - numba >=0.49
+    - numba >=0.57
     - typing_extensions
     - sympy >=1.8
 
