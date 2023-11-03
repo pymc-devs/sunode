@@ -1,9 +1,8 @@
+# Sunode – Solving ODEs in python
+
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4058330.svg)](https://doi.org/10.5281/zenodo.4058330)
 
-
 You can find the documentation [here](https://sunode.readthedocs.io/en/latest/index.html).
-
-# Sunode – Solving ODEs in python
 
 Sunode wraps the sundials solvers ADAMS and BDF, and their support for solving
 adjoint ODEs in order to compute gradients of the solutions.  The required
@@ -16,9 +15,11 @@ C-function is passed to sunode, so that there is no python overhead.
 `sunode` comes with an PyTensor wrapper so that parameters of an ODE can be estimated
 using PyMC.
 
-### Installation
+## Installation
+
 sunode is available on conda-forge. Set up a conda environment to use conda-forge
 and install sunode:
+
 ```bash
 conda create -n sunode-env
 conda activate sunode-env
@@ -30,17 +31,18 @@ conda install sunode
 
 You can also install the development version. On Windows you have to make
 sure the correct Visual Studio version is installed and in the PATH.
-```
-git clone git@github.com:aseyboldt/sunode
+
+```bash
+git clone git@github.com:pymc-devs/sunode
 # Or if no ssh key is configured:
-git clone https://github.com/aseyboldt/sunode
+git clone https://github.com/pymc-devs/sunode
 
 cd sunode
 conda install --only-deps sunode
 pip install -e .
 ```
 
-### Solve an ODE outside a PyMC model
+## Solve an ODE outside a PyMC model
 
 We will use the Lotka-Volterra equations as an example ODE:
 
@@ -64,7 +66,8 @@ def lotka_volterra(t, y, p):
     }
 
 
-problem = sunode.symode.SympyProblem(
+from sunode.symode import SympyProblem
+problem = SympyProblem(
     params={
         # We need to specify the shape of each parameter.
         # Any empty tuple corresponds to a scalar value.
@@ -90,9 +93,11 @@ problem = sunode.symode.SympyProblem(
 # The solver generates uses numba and sympy to generate optimized C functions
 # for the right-hand-side and if necessary for the jacobian, adoint and
 # quadrature functions for gradients.
-solver = sunode.solver.Solver(problem, compute_sens=False, solver='BDF')
+from sunode.solver import Solver
+solver = Solver(problem, sens_mode=None, solver='BDF')
 
 
+import numpy as np
 tvals = np.linspace(0, 10)
 # We can use numpy structured arrays as input, so that we don't need
 # to think about how the different variables are stored in the array.
@@ -116,7 +121,8 @@ solver.solve(t0=0, tvals=tvals, y0=y0, y_out=output)
 solver.as_xarray(tvals, output).solution_hares.plot()
 
 # Or we can convert it to a numpy record array
-plt.plot(output.view(problem.state_dtype)['hares']
+from matplotlib import pyplot as plt
+plt.plot(output.view(problem.state_dtype)['hares'])
 ```
 
 For this example the BDF solver (which isn't the best solver for a small non-stiff
@@ -125,12 +131,13 @@ takes about 40ms at a tolerance of 1e-10, 1e-10. So we are faster by a factor of
 This advantage will get somewhat smaller for large problems however, when the
 Python overhead of the ODE solver has a smaller impact.
 
-### Usage in PyMC
+## Usage in PyMC
 
 Let's use the same ODE, but fit the parameters using PyMC, and gradients
 computed using `sunode`.
 
 We'll use some time artificial data:
+
 ```python
 import numpy as np
 import sunode
@@ -188,27 +195,27 @@ with pm.Model() as model:
     
     y_hat, _, problem, solver, _, _ = sunode.wrappers.as_pytensor.solve_ivp(
         y0={
-	    # The initial conditions of the ode. Each variable
-	    # needs to specify a PyTensor or numpy variable and a shape.
-	    # This dict can be nested.
+        # The initial conditions of the ode. Each variable
+        # needs to specify a PyTensor or numpy variable and a shape.
+        # This dict can be nested.
             'hares': (hares_start, ()),
             'lynx': (lynx_start, ()),
         },
         params={
-	    # Each parameter of the ode. sunode will only compute derivatives
-	    # with respect to PyTensor variables. The shape needs to be specified
-	    # as well. It it infered automatically for numpy variables.
-	    # This dict can be nested.
+        # Each parameter of the ode. sunode will only compute derivatives
+        # with respect to PyTensor variables. The shape needs to be specified
+        # as well. It it infered automatically for numpy variables.
+        # This dict can be nested.
             'alpha': (alpha, ()),
             'beta': (beta, ()),
             'gamma': (gamma, ()),
             'delta': (delta, ()),
             'extra': np.zeros(1),
         },
-	# A functions that computes the right-hand-side of the ode using
-	# sympy variables.
+        # A functions that computes the right-hand-side of the ode using
+        # sympy variables.
         rhs=lotka_volterra,
-	# The time points where we want to access the solution
+        # The time points where we want to access the solution
         tvals=times,
         t0=times[0],
     )
@@ -224,7 +231,8 @@ with pm.Model() as model:
 ```
 
 We can sample using PyMC (You need `cores=1` on Windows for the moment):
-```
+
+```python
 with model:
     idata = pm.sample(tune=1000, draws=1000, chains=6, cores=6)
 ```
@@ -232,7 +240,7 @@ with model:
 Many solver options can not be specified with a nice interface for now,
 we can call the raw sundials functions however:
 
-```
+```python
 lib = sunode._cvodes.lib
 lib.CVodeSStolerances(solver._ode, 1e-10, 1e-10)
 lib.CVodeSStolerancesB(solver._ode, solver._odeB, 1e-8, 1e-8)
