@@ -1,4 +1,7 @@
 name: Python package
+defaults:
+  run:
+    shell: bash -leo pipefail {0}
 
 on:
   pull_request:
@@ -7,39 +10,43 @@ on:
       - master
 
 jobs:
-  test-on-linux:
+  run-tests:
     runs-on: ${{ matrix.os }}
     name: sunode - ${{ matrix.os }} - ${{ matrix.python-version }}
-    defaults:
-      run:
-        shell: bash -l {0}
     strategy:
       max-parallel: 6
       fail-fast: false
       matrix:
         os: ["ubuntu-latest", "windows-latest"]
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+    - name: Install micromamba
+      uses: mamba-org/setup-micromamba@v1
       with:
-        path: "sunode"
-    - name: Install miniconda
-      uses: conda-incubator/setup-miniconda@v2
-      with:
-        auto-update-conda: true
-        activate-environment: sunode-dev
-        miniforge-version: latest
-        python-version: ${{ matrix.python-version }}
-    - name: Install Dependences
+        environment-name: sunode-dev
+        create-args: >-
+          python=${{ matrix.python-version }}
+          pytest
+          pytest-cov
+          hypothesis
+          statsmodels
+          pytensor
+          c-compiler
+          sundials<6.0
+          numba
+          sympy
+          typing_extensions
+          cffi
+          xarray
+        init-shell: bash
+    - name: Get some debugging info
       run: |
-        conda install --yes conda-build boa conda-verify pytest pytest-cov hypothesis statsmodels pytensor c-compiler
-    - name: Build package
+        env
+        which gcc
+    - name: Install sunode
       run: |
-        conda mambabuild --variants "{python: [${{ matrix.python-version }}]}" ./sunode/conda
-    - name: Install package 
-      run: |
-        conda install --yes -c file:///${CONDA_PREFIX}/conda-bld/ sunode
+        pip install -e .
     - name: Test with coverage
       run: |
-        # conda activate doesn't seem to set paths to the conda prefix correctly
-        env LD_LIBRARY_PATH=${CONDA_PREFIX}/lib pytest --cov=sunode --cov-report xml --cov-report term-missing sunode
+        pytest --cov=sunode --cov-report xml --cov-report term-missing sunode
