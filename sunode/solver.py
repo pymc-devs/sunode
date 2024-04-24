@@ -311,6 +311,7 @@ class Solver:
             "_linear_solver_kwargs",
             "_sens_mode",
             "_solver_kind",
+            "_state_names",
         ]
 
         self._init_sundials()
