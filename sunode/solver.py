@@ -217,7 +217,6 @@ class Solver:
 
         self._state_buffer = sunode.empty_vector(n_states)
         self._state_buffer.data[:] = 0
-        self._jac = check(lib.SUNDenseMatrix(n_states, n_states))
 
         self._ode = check(lib.CVodeCreate(self._solver_kind))
         rhs = self._problem.make_sundials_rhs()
@@ -233,17 +232,26 @@ class Solver:
             self._constraints_vec = sunode.from_numpy(self._constraints)
             check(lib.CVodeSetConstraints(self._ode, self._constraints_vec.c_ptr))
 
-        self._make_linsol(self._linear_solver_kind)
+        self._make_linsol(self._linear_solver_kind, **self._linear_solver_kwargs)
 
         self._compute_sens = self._sens_mode is not None
         if self._compute_sens:
             sens_rhs = self._problem.make_sundials_sensitivity_rhs()
             self._init_sens(sens_rhs, self._sens_mode)
 
-    def __init__(self, problem: Problem, *,
-                 abstol: float = 1e-10, reltol: float = 1e-10,
-                 sens_mode: Optional[str] = None, scaling_factors: Optional[np.ndarray] = None,
-                 constraints: Optional[np.ndarray] = None, solver='BDF', linear_solver="dense"):
+    def __init__(
+            self,
+            problem: Problem,
+            *,
+            abstol: float = 1e-10,
+            reltol: float = 1e-10,
+            sens_mode: Optional[str] = None,
+            scaling_factors: Optional[np.ndarray] = None,
+            constraints: Optional[np.ndarray] = None,
+            solver='BDF',
+            linear_solver="dense",
+            linear_solver_kwargs=None,
+        ):
         self._problem = problem
         self._user_data = problem.make_user_data()
         self._constraints = constraints
@@ -252,6 +260,7 @@ class Solver:
         self._reltol = reltol
 
         self._linear_solver_kind = linear_solver
+        self._linear_solver_kwargs = linear_solver_kwargs
         self._sens_mode = sens_mode
 
         if solver == 'BDF':
@@ -268,6 +277,7 @@ class Solver:
             "_abstol",
             "_reltol",
             "_linear_solver_kind",
+            "_linear_solver_kwargs",
             "_sens_mode",
             "_solver_kind",
         ]
@@ -281,14 +291,17 @@ class Solver:
         self.__dict__.update(state)
         self._init_sundials()
 
-    def _make_linsol(self, linear_solver) -> None:
+    def _make_linsol(self, linear_solver, **kwargs) -> None:
+        n_states = self._problem.n_states
         if linear_solver == "dense":
+            self._jac = check(lib.SUNDenseMatrix(n_states, n_states))
             linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
             check(lib.CVodeSetLinearSolver(self._ode, linsolver, self._jac))
 
             self._jac_func = self._problem.make_sundials_jac_dense()
             check(lib.CVodeSetJacFn(self._ode, self._jac_func.cffi))
         elif linear_solver == "dense_finitediff":
+            self._jac = check(lib.SUNDenseMatrix(n_states, n_states))
             linsolver = check(lib.SUNLinSol_Dense(self._state_buffer.c_ptr, self._jac))
             check(lib.CVodeSetLinearSolver(self._ode, linsolver, self._jac))
         elif linear_solver == "spgmr_finitediff":
@@ -301,6 +314,14 @@ class Solver:
             check(lib.SUNLinSolInitialize_SPGMR(linsolver))
             jac_prod = self._problem.make_sundials_jac_prod()
             check(lib.CVodeSetJacTimes(self._ode, ffi.NULL, jac_prod.cffi))
+        elif linear_solver == "band":
+            upper_bandwidth = kwargs.get("upper_bandwidth", None)
+            lower_bandwidth = kwargs.get("lower_bandwidth", None)
+            if upper_bandwidth is None or lower_bandwidth is None:
+                raise ValueError("Specify 'lower_bandwidth' and 'upper_bandwidth' arguments for banded solver.")
+            self._jac = check(lib.SUNBandMatrix(n_states, upper_bandwidth, lower_bandwidth))
+            linsolver = check(lib.SUNLinSol_Band(self._state_buffer.c_ptr, self._jac))
+            check(lib.CVodeSetLinearSolver(self._ode, linsolver, self._jac))
         else:
             raise ValueError(f"Unknown linear solver: {linear_solver}")
 
