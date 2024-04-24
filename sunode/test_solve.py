@@ -171,7 +171,11 @@ def test_linear_solver_kwarg():
         'b': 0.2
     }
     problem = SympyProblem(params, states, rhs, derivative_params=[])
-    linear_solver_opts = ["dense", "dense_finitediff", "spgmr_finitediff", "spgmr"]
+    linear_solver_opts = ["dense", "dense_finitediff", "spgmr_finitediff", "spgmr", "band"]
     for linear_solver in linear_solver_opts:
-        solver = Solver(problem, linear_solver=linear_solver)
+        if linear_solver == "band":
+            linear_solver_kwargs = {"upper_bandwidth": 1, "lower_bandwidth": 1}
+        else:
+            linear_solver_kwargs = {}
+        solver = Solver(problem, linear_solver=linear_solver, linear_solver_kwargs=linear_solver_kwargs)
         check_call_solve(solver, param_vals, None)
