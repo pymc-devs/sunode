@@ -85,6 +85,8 @@ ODE might look like this::
 After defining states, parameters and right-hand-side function we can create a
 `SympyProblem` instance::
 
+    import sunode
+
     problem = sunode.SympyProblem(
         params=params,
         states=states,
@@ -99,12 +101,13 @@ create a solver for no derivatives or with forward derivatives
 (``sunode.Solver``), or a solver that can compute gradients using
 the adjoint ODE (``sunode.AdjointSolver``).::
 
-    solver = sunode.solver.Solver(problem, compute_sens=False, solver='BDF')
+    solver = sunode.solver.Solver(problem, solver='BDF')
 
 We can use numpy structured arrays as input, so that we don't need to
 think about how the different variables are stored in the array.
 This does not introduce runtime overhead.::
 
+    import numpy as np
     y0 = np.zeros((), dtype=problem.state_dtype)
     y0['hares'] = 1
     y0['lynxes'] = 0.1
@@ -128,4 +131,4 @@ We can convert the solution to an xarray Dataset or access the
 individual states as numpy record array::
 
     solver.as_xarray(tvals, output).solution_hares.plot()
-    plt.plot(output.view(tvals, problem.state_dtype)['hares'])
+    plt.plot(tvals, output.view(problem.state_dtype)['hares'])
