@@ -252,6 +252,37 @@ class Solver:
             linear_solver="dense",
             linear_solver_kwargs=None,
         ):
+        """
+        Parameters
+        ----------
+        problem: sunode Problem
+        abstol: float, optional
+            Absolute tolerance (default is 1e-10).
+        reltol: float, optional
+            Relative tolerance (default is 1e-10).
+        sense_mode: {"simultaneous", "staggered"}, optional
+            Forward sensitivity method (see [this explanation in the SUNDIALS documentation][1]).
+        scaling_factors: numpy.ndarray, optional
+            Vector of positive scaling factors used for the sensitivity calculations.
+        constraints: numpy.ndarray, optional
+            Vector of inequality constraints for the solution. The length of the vector must correspond
+            to the number of states. See the SUNDIALS documentation for the [constraint options][2].
+        solver: {"BDF", "ADAMS"}, optional
+            Algorithm for solving the ODE (the default is ``"BDF"``).
+        linear_solver: {"dense", "dense_finitediff", "spgmr", "spgmr_finitediff", "band"}, optional
+            Type of linear solver to use (the default is "dense").
+            If linear_solver is ``"band"``, ``linear_solver_kwargs`` must contain ``lower_bandwidth``
+            and ``upper_bandwidth``, defining the lower and upper half-bandwidth of the banded matrix
+            (see the [SUNDIALS documentation][3] for details).
+        linear_solver_kwargs: dict, optional
+            Keyword arguments for the linear solver.
+
+        [1]: https://sundials.readthedocs.io/en/latest/idas/Mathematics_link.html#forward-sensitivity-methods
+        [2]: https://sundials.readthedocs.io/en/latest/cvode/Usage/index.html#c.CVodeSetConstraints
+        [3]: https://sundials.readthedocs.io/en/latest/sunmatrix/SUNMatrix_links.html#the-sunmatrix-band-module
+        """
+        if linear_solver_kwargs is None:
+            linear_solver_kwargs = {}
         self._problem = problem
         self._user_data = problem.make_user_data()
         self._constraints = constraints
