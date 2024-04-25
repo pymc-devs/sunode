@@ -40,10 +40,6 @@ jobs:
           cffi
           xarray
         init-shell: bash
-    - name: Get some debugging info
-      run: |
-        env
-        which gcc
     - name: Install sunode
       run: |
         pip install -e .
